@@ -85,6 +85,8 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
                 ),
                 '|' => {
                     commands.push(CommandPart::Command(vec![Argument::Text(String::from(""))]));
+                    chars.next(); // Hacky work around to not treat the space after a pipe as a
+                                  // commonad
                 }
                 ' ' => {
                     if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
