@@ -14,6 +14,7 @@ use std::{
     process::{self, Child, Command, Stdio},
     str::SplitWhitespace,
 };
+use tokenizer::{Argument, CommandPart};
 
 mod input_reader;
 mod tokenizer;
@@ -53,14 +54,23 @@ pub fn run_radish() {
     }
 }
 
-fn run_input(input: &Vec<String>, env: &mut Env) -> crossterm::Result<()> {
+fn run_input(input: &Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm::Result<()> {
     disable_raw_mode().unwrap();
     let mut input = input.deref().iter().peekable();
     let mut last_command: Option<Child> = None;
 
     while let Some(sub_command) = input.next() {
-        let mut tokens = sub_command.split_whitespace();
-        let command = tokens.next().unwrap();
+        let mut tokens: Vec<String> = match sub_command {
+            CommandPart::Command(cmd) => cmd
+                .iter()
+                .map(|x| match x {
+                    Argument::Text(s) => s.to_owned(),
+                    _ => unimplemented!(),
+                })
+                .collect(),
+            _ => unimplemented!(),
+        };
+        let command = tokens.remove(0);
         let stdout = match input.peek() {
             Some(_) => Stdio::piped(),
             None => Stdio::inherit(),
@@ -71,7 +81,7 @@ fn run_input(input: &Vec<String>, env: &mut Env) -> crossterm::Result<()> {
         } else {
             Stdio::inherit()
         };
-        last_command = run(command, tokens, stdout, stdin, env);
+        last_command = run(&command, tokens, stdout, stdin, env);
     }
     if let Some(mut cmd) = last_command {
         cmd.wait()?;
@@ -82,7 +92,7 @@ fn run_input(input: &Vec<String>, env: &mut Env) -> crossterm::Result<()> {
 
 fn run(
     command: &str,
-    args: SplitWhitespace,
+    args: Vec<String>,
     stdout: Stdio,
     stdin: Stdio,
     env: &mut Env,
@@ -116,15 +126,16 @@ fn run(
     }
 }
 
-fn cd(mut args: SplitWhitespace) {
-    let newdir = match args.next() {
+fn cd(args: Vec<String>) {
+    let newdir = match args.iter().next() {
         None => dirs::home_dir().unwrap(),
         Some(dir) => Path::new(dir).into(),
     };
     env::set_current_dir(newdir).expect("Error setting dir");
 }
 
-fn mklist(lists: &mut HashMap<String, Vec<String>>, mut args: SplitWhitespace) {
+fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
+    let mut args = args.iter();
     if let Some(first) = args.next() {
         lists.insert(first.to_string(), args.map(|x| x.to_string()).collect());
     } else {
