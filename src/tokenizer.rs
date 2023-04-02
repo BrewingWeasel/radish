@@ -1,13 +1,5 @@
 use std::env;
 
-#[derive(Debug)]
-struct ReplaceInfo<'a> {
-    start: usize,
-    end: usize,
-    item: usize,
-    conts: &'a Vec<String>,
-}
-
 pub enum Argument {
     Text(String),
     List(String),
@@ -56,22 +48,16 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
                 last_str.push(chars.next().unwrap());
                 continue;
             }
-            // '%' => {
-            //     let name = &chars
-            //         .by_ref()
-            //         .take_while(|x| *x != '\n' && *x != ' ')
-            //         .collect::<String>();
-            //     replace_locations.push(ReplaceInfo {
-            //         start: cur_char,
-            //         end: cur_char + 1,
-            //         item: commands.len(),
-            //         conts: env.lists.get(name).unwrap(),
-            //     });
-            //     commands.last_mut().unwrap().push('%');
-            //     commands.last_mut().unwrap().push(' ');
-            //     cur_char += 2;
-            //     continue;
-            // }
+            '%' => {
+                let name = chars
+                    .by_ref()
+                    .take_while(|x| *x != '\n' && *x != ' ')
+                    .collect::<String>();
+                if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                    cmd.push(Argument::List(name))
+                }
+                continue;
+            }
             _ => (),
         }
         if !in_quotes {
@@ -86,7 +72,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
                 '|' => {
                     commands.push(CommandPart::Command(vec![Argument::Text(String::from(""))]));
                     chars.next(); // Hacky work around to not treat the space after a pipe as a
-                                  // commonad
+                                  // command
                 }
                 ' ' => {
                     if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
