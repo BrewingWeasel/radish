@@ -1,0 +1,217 @@
+use crossterm::{
+    cursor::{MoveLeft, MoveToColumn},
+    event::{read, Event, KeyCode, KeyModifiers},
+    execute, queue,
+    style::{Color, Print, ResetColor, SetForegroundColor},
+    terminal::Clear,
+};
+use std::{borrow::Cow, fs::read_dir, io::stdout, process};
+
+pub fn get_input(history: &mut Vec<String>, env: &crate::Env) -> String {
+    #[derive(Debug)]
+    enum CompletionType {
+        Command,
+        List,
+        File,
+    }
+    let mut history_index = history.len();
+    let mut input = String::new();
+    let mut in_quotes = false;
+    let mut after_slash = false;
+    let mut currently_completing = CompletionType::Command;
+    loop {
+        if let Event::Key(x) = read().unwrap() {
+            match x.code {
+                KeyCode::Char(c) => {
+                    if after_slash {
+                        execute!(stdout(), Print(c), ResetColor).unwrap();
+                        input.push(c);
+                        after_slash = false;
+                        continue;
+                    }
+                    match c {
+                        '"' => {
+                            in_quotes = !in_quotes;
+                            if in_quotes {
+                                queue!(stdout(), SetForegroundColor(Color::Blue)).unwrap();
+                            } else {
+                                queue!(stdout(), ResetColor).unwrap();
+                            }
+                        }
+                        '\\' => {
+                            queue!(stdout(), SetForegroundColor(Color::Magenta)).unwrap();
+                            after_slash = true;
+                        }
+                        '%' => {
+                            if !in_quotes {
+                                currently_completing = CompletionType::List;
+                            }
+                        }
+                        ' ' => {
+                            if !in_quotes {
+                                currently_completing = CompletionType::File;
+                            }
+                        }
+                        '|' => {
+                            if !in_quotes {
+                                execute!(
+                                    stdout(),
+                                    SetForegroundColor(Color::Cyan),
+                                    Print("|"),
+                                    ResetColor
+                                )
+                                .unwrap();
+                                input.push(c);
+                                currently_completing = CompletionType::Command;
+                                // TODO: clean up, change name or stmh
+                                after_slash = true;
+                                continue;
+                            }
+                        }
+                        _ => (),
+                    }
+                    execute!(stdout(), Print(c)).unwrap();
+                    input.push(c);
+                }
+                KeyCode::Tab => {
+                    let completing_values = match currently_completing {
+                        CompletionType::Command => (
+                            get_backwards_until(&input, ' '),
+                            env.commands.iter().map(Cow::Borrowed).collect(),
+                        ),
+                        CompletionType::List => (
+                            get_backwards_until(&input, '%'),
+                            env.lists.keys().map(Cow::Borrowed).collect(),
+                        ),
+                        CompletionType::File => (
+                            get_backwards_until(&input, ' '),
+                            get_all_files().into_iter().map(Cow::Owned).collect(),
+                        ),
+                    };
+                    let new_cmd = suggest(&completing_values.0, &completing_values.1);
+                    if let Some(completion) = new_cmd {
+                        execute!(
+                            stdout(),
+                            MoveLeft(completing_values.0.len().try_into().unwrap()),
+                            Clear(crossterm::terminal::ClearType::UntilNewLine),
+                            Print(completion)
+                        )
+                        .unwrap();
+                        input.replace_range(input.len() - completing_values.0.len().., completion);
+                    }
+                }
+                KeyCode::Esc => process::exit(0),
+                KeyCode::Enter => {
+                    execute!(stdout(), Print('\n'), MoveToColumn(0)).unwrap();
+                    break;
+                }
+                KeyCode::Backspace => {
+                    if x.modifiers.contains(KeyModifiers::CONTROL) {
+                        // TODO: add ctrl delete
+                    } else if input.pop().is_some() {
+                        execute!(stdout(), MoveLeft(1), Print(" "), MoveLeft(1)).unwrap()
+                    }
+                }
+                KeyCode::Up => {
+                    if history_index == 0 {
+                        continue;
+                    }
+                    history_index -= 1;
+                    let new_input = history.get(history_index);
+                    if let Some(inp) = new_input {
+                        execute!(
+                            stdout(),
+                            MoveToColumn(env.prompt_length),
+                            Clear(crossterm::terminal::ClearType::UntilNewLine),
+                            Print(inp)
+                        )
+                        .unwrap();
+                        input = inp.to_string();
+                    } else {
+                        history_index += 1;
+                    }
+                }
+                KeyCode::Down => {
+                    history_index += 1;
+                    let new_input = history.get(history_index);
+                    if let Some(inp) = new_input {
+                        execute!(
+                            stdout(),
+                            MoveToColumn(env.prompt_length),
+                            Clear(crossterm::terminal::ClearType::UntilNewLine),
+                            Print(inp)
+                        )
+                        .unwrap();
+                        input = inp.to_string();
+                    } else {
+                        history_index -= 1;
+                        execute!(
+                            stdout(),
+                            MoveToColumn(env.prompt_length),
+                            Clear(crossterm::terminal::ClearType::UntilNewLine),
+                        )
+                        .unwrap();
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+    input
+}
+
+fn get_backwards_until(input: &str, until: char) -> String {
+    //TODO: probably make this use traits and clean this up
+    input
+        .chars()
+        .rev()
+        .take_while(|x| *x != until)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect()
+}
+
+fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
+    if options.len() == 1 {
+        return Some(&options[0]);
+    }
+    let mut most_shared = 0;
+    let mut number_of_shared = 0;
+    for (i, option) in options.iter().enumerate() {
+        let mut cur_shared = 0;
+        let mut input_chars = input.chars();
+        let mut option_chars = option.chars();
+        while input_chars.next() == option_chars.next() {
+            cur_shared += 1;
+        }
+        if cur_shared < most_shared {
+            if number_of_shared == 0 {
+                return Some(&options[i - 1]);
+            } else {
+                return None;
+            }
+        } else if cur_shared == most_shared {
+            number_of_shared += 1;
+        } else {
+            number_of_shared = 0;
+            most_shared = cur_shared;
+        }
+    }
+    None
+}
+
+fn get_all_files() -> Vec<String> {
+    read_dir("./")
+        .unwrap()
+        .map(|p| {
+            p.unwrap()
+                .path()
+                .display()
+                .to_string()
+                .strip_prefix("./")
+                .unwrap()
+                .to_owned()
+        })
+        .collect()
+}
