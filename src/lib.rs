@@ -9,12 +9,10 @@ use std::{
     env,
     fs::read_dir,
     io::{stdout, Write},
-    ops::Deref,
     path::Path,
     process::{self, Child, Command, Stdio},
-    str::SplitWhitespace,
 };
-use tokenizer::{Argument, CommandPart};
+use tokenizer::CommandPart;
 
 mod input_reader;
 mod tokenizer;
@@ -31,6 +29,7 @@ pub fn run_radish() {
     let mut history: Vec<String> = vec![];
     let mut commands = get_all_commands();
     commands.sort_unstable();
+    commands.dedup(); // Hacky workaround for when there are multiple of the same file name in path
     let mut env = Env {
         commands,
         prompt_length: 3,
@@ -44,9 +43,15 @@ pub fn run_radish() {
         if input.is_empty() {
             continue;
         }
-        let parsed_input = tokenizer::parse_input(&input, &mut env);
-        for individual_command in parsed_input {
-            if let Err(e) = run_input(&individual_command, &mut env) {
+        let parsed_input = tokenizer::parse_input(&input, &env);
+        for replacement in parsed_input.1 {
+            let mut final_tokens = parsed_input.0.clone();
+            for (command_part_index, token_index, contents) in replacement {
+                if let CommandPart::Command(ref mut cmd) = final_tokens[command_part_index] {
+                    cmd[token_index] = contents;
+                }
+            }
+            if let Err(e) = run_input(final_tokens, &mut env) {
                 println!("Oops! {e}");
             }
         }
@@ -54,34 +59,28 @@ pub fn run_radish() {
     }
 }
 
-fn run_input(input: &Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm::Result<()> {
+fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm::Result<()> {
     disable_raw_mode().unwrap();
-    let mut input = input.deref().iter().peekable();
+    // let mut input = input.deref().iter().peekable();
     let mut last_command: Option<Child> = None;
 
-    while let Some(sub_command) = input.next() {
-        let mut tokens: Vec<String> = match sub_command {
-            CommandPart::Command(cmd) => cmd
-                .iter()
-                .map(|x| match x {
-                    Argument::Text(s) => s.to_owned(),
-                    _ => unimplemented!(),
-                })
-                .collect(),
-            _ => unimplemented!(),
-        };
-        let command = tokens.remove(0);
-        let stdout = match input.peek() {
+    for token_index in 0..input.len() {
+        let stdout = match input.get(token_index + 1) {
             Some(_) => Stdio::piped(),
             None => Stdio::inherit(),
         };
+        let tokens = match &mut input[token_index] {
+            CommandPart::Command(cmd) => cmd,
+            _ => unreachable!(),
+        };
+        let command = tokens.remove(0);
 
         let stdin = if let Some(output) = last_command {
             Stdio::from(output.stdout.unwrap())
         } else {
             Stdio::inherit()
         };
-        last_command = run(&command, tokens, stdout, stdin, env);
+        last_command = run(&command, tokens.to_vec(), stdout, stdin, env);
     }
     if let Some(mut cmd) = last_command {
         cmd.wait()?;

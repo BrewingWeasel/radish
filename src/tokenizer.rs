@@ -1,32 +1,29 @@
 use std::env;
 
-pub enum Argument {
-    Text(String),
-    List(String),
-    ListReference(u8),
-}
-
 // TODO: come up with a better name
+#[derive(Clone)]
 pub enum CommandPart {
-    Command(Vec<Argument>),
+    Command(Vec<String>),
     File((String, bool)),
     // TODO: allow sending stdout to a file or possibly somewhere else in
     // the future
 }
 
-// TODO: Actually tokenize instead of just hacking it with ignoring strings, indexes etc
-pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
+// TODO: Clean up
+pub fn parse_input(
+    input: &str,
+    env: &crate::Env,
+) -> (Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>) {
     let mut in_quotes = false;
-    let mut commands: Vec<CommandPart> =
-        vec![CommandPart::Command(vec![Argument::Text(String::from(""))])];
+    let mut commands: Vec<CommandPart> = vec![CommandPart::Command(vec![String::from("")])];
     let mut chars = input.chars();
+    let mut commandpart_index = 0;
+    let mut current_token_index = 0;
+    let mut replacement: Vec<Vec<(usize, usize, String)>> = vec![vec![]];
 
     while let Some(i) = chars.next() {
         let last_str = match commands.last_mut().unwrap() {
-            CommandPart::Command(args) => match args.last_mut().unwrap() {
-                Argument::Text(s) => s,
-                _ => panic!("Tokenizer should have finished parsing list"),
-            },
+            CommandPart::Command(args) => args.last_mut().unwrap(),
             _ => panic!("Took in file instead of argument"),
         };
         match i {
@@ -49,12 +46,25 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
                 continue;
             }
             '%' => {
+                if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                    cmd.push(String::from(""));
+                }
+                current_token_index += 1;
+
                 let name = chars
                     .by_ref()
                     .take_while(|x| *x != '\n' && *x != ' ')
                     .collect::<String>();
-                if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                    cmd.push(Argument::List(name))
+                for index in 0..replacement.len() {
+                    for item in env.lists.get(&name).unwrap() {
+                        let mut replacement_pattern = replacement[index].clone();
+                        replacement_pattern.push((
+                            commandpart_index,
+                            current_token_index,
+                            item.to_string(),
+                        ));
+                        replacement.push(replacement_pattern);
+                    }
                 }
                 continue;
             }
@@ -70,14 +80,17 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
                         .unwrap(),
                 ),
                 '|' => {
-                    commands.push(CommandPart::Command(vec![Argument::Text(String::from(""))]));
+                    commands.push(CommandPart::Command(vec![String::from("")]));
                     chars.next(); // Hacky work around to not treat the space after a pipe as a
                                   // command
+                    commandpart_index += 1;
+                    current_token_index = 0;
                 }
                 ' ' => {
                     if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                        cmd.push(Argument::Text(String::from("")));
+                        cmd.push(String::from(""));
                     }
+                    current_token_index += 1;
                 }
                 _ => last_str.push(i),
             }
@@ -85,7 +98,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Vec<Vec<CommandPart>> {
             last_str.push(i);
         }
     }
-    vec![commands]
+    (commands, replacement)
 
     //let mut new_commands: Vec<Vec<CommandPart>> = vec![];
 
