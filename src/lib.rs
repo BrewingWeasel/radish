@@ -44,18 +44,31 @@ pub fn run_radish() {
             continue;
         }
         let parsed_input = tokenizer::parse_input(&input, &env);
-        for replacement in parsed_input.1 {
-            let mut final_tokens = parsed_input.0.clone();
-            for (command_part_index, token_index, contents) in replacement {
-                if let CommandPart::Command(ref mut cmd) = final_tokens[command_part_index] {
-                    cmd[token_index - 1] = contents;
-                }
-            }
-            if let Err(e) = run_input(final_tokens, &mut env) {
-                println!("Oops! {e}");
+        generate_commands(parsed_input, &mut env);
+        history.push(input);
+    }
+}
+
+fn generate_commands(
+    parsed_input: (Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>),
+    env: &mut Env,
+) {
+    if parsed_input.1.is_empty() {
+        if let Err(e) = run_input(parsed_input.0, env) {
+            println!("Oops! {e}");
+        }
+        return;
+    }
+    for replacement in parsed_input.1 {
+        let mut final_tokens = parsed_input.0.clone();
+        for (command_part_index, token_index, contents) in replacement {
+            if let CommandPart::Command(ref mut cmd) = final_tokens[command_part_index] {
+                cmd[token_index - 1] = contents;
             }
         }
-        history.push(input);
+        if let Err(e) = run_input(final_tokens, env) {
+            println!("Oops! {e}");
+        }
     }
 }
 

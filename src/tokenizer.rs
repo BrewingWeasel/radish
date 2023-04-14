@@ -55,6 +55,7 @@ pub fn parse_input(
                     .by_ref()
                     .take_while(|x| *x != '\n' && *x != ' ')
                     .collect::<String>();
+                let mut new_replacement = vec![];
                 for index in 0..replacement.len() {
                     for item in env.lists.get(&name).unwrap() {
                         let mut replacement_pattern = replacement[index].clone();
@@ -63,9 +64,10 @@ pub fn parse_input(
                             current_token_index,
                             item.to_string(),
                         ));
-                        replacement.push(replacement_pattern);
+                        new_replacement.push(replacement_pattern);
                     }
                 }
+                replacement = new_replacement;
                 continue;
             }
             _ => (),
