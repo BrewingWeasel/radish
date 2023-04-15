@@ -1,3 +1,4 @@
+use glob::glob;
 use std::env;
 
 // TODO: come up with a better name
@@ -15,6 +16,7 @@ pub fn parse_input(
     env: &crate::Env,
 ) -> (Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>) {
     let mut in_quotes = false;
+    let mut in_glob_pattern = false;
     let mut commands: Vec<CommandPart> = vec![CommandPart::Command(vec![String::from("")])];
     let mut chars = input.chars();
     let mut commandpart_index = 0;
@@ -89,6 +91,18 @@ pub fn parse_input(
                     current_token_index = 0;
                 }
                 ' ' => {
+                    if in_glob_pattern {
+                        let glob_pattern = last_str.clone();
+                        if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                            cmd.pop();
+                            for entry in glob(&glob_pattern).unwrap() {
+                                if let Ok(path) = entry {
+                                    cmd.push(path.display().to_string())
+                                }
+                            }
+                        }
+                    }
+                    in_glob_pattern = false;
                     if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
                         cmd.push(String::from(""));
                     }
@@ -100,6 +114,10 @@ pub fn parse_input(
                         .take_while(|x| *x != '\n' && *x != ' ')
                         .collect::<String>();
                     last_str.push_str(&env.locations.get(&name).unwrap())
+                }
+                '*' => {
+                    in_glob_pattern = true;
+                    last_str.push('*');
                 }
                 _ => last_str.push(i),
             }
