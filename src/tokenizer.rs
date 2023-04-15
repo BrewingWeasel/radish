@@ -94,6 +94,13 @@ pub fn parse_input(
                     }
                     current_token_index += 1;
                 }
+                '@' => {
+                    let name = chars
+                        .by_ref()
+                        .take_while(|x| *x != '\n' && *x != ' ')
+                        .collect::<String>();
+                    last_str.push_str(&env.locations.get(&name).unwrap())
+                }
                 _ => last_str.push(i),
             }
         } else {
@@ -101,40 +108,4 @@ pub fn parse_input(
         }
     }
     (commands, replacement)
-
-    //let mut new_commands: Vec<Vec<CommandPart>> = vec![];
-
-    // let mut new_commands_parts = vec![commands];
-    // let mut replace_locations = replace_locations.iter().peekable();
-    // while let Some(loc) = replace_locations.next() {
-    //     let mut new_parts: (Option<Vec<Vec<String>>>, Vec<Vec<usize>>) = (Some(vec![]), vec![]);
-    //     for (command, cur_offset) in new_commands_parts.iter().zip(offset.iter()) {
-    //         let cur_offset = cur_offset.get(loc.item - 1).unwrap_or(&0);
-    //         if replace_locations.peek().is_none() {
-    //             for list_item in loc.conts {
-    //                 let mut new_cmd = command.clone();
-    //                 new_cmd
-    //                     .get_mut(loc.item - 1)
-    //                     .unwrap()
-    //                     .replace_range((loc.start + cur_offset)..(loc.end + cur_offset), list_item);
-    //                 new_commands.push(new_cmd);
-    //             }
-    //         } else {
-    //             for list_item in loc.conts {
-    //                 let mut new_cmd = command.clone();
-    //                 new_cmd
-    //                     .get_mut(loc.item - 1)
-    //                     .unwrap()
-    //                     .replace_range((loc.start + cur_offset)..(loc.end + cur_offset), list_item);
-    //                 new_parts.0.as_mut().unwrap().push(new_cmd);
-    //                 new_parts.1.push(vec![list_item.len() - 1]);
-    //             }
-    //         }
-    //     }
-    //     offset = new_parts.1;
-    //     if let Some(replacement) = new_parts.0 {
-    //         new_commands_parts = replacement;
-    //     }
-    // }
-    //new_commands
 }

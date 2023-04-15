@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     env,
     fs::read_dir,
-    io::{stdout, Write},
+    io::{stderr, stdout, Write},
     path::Path,
     process::{self, Child, Command, Stdio},
 };
@@ -22,6 +22,7 @@ pub struct Env {
     commands: Vec<String>,
     prompt_length: u16,
     lists: HashMap<String, Vec<String>>,
+    locations: HashMap<String, String>,
 }
 
 pub fn run_radish() {
@@ -34,6 +35,7 @@ pub fn run_radish() {
         commands,
         prompt_length: 3,
         lists: HashMap::new(),
+        locations: HashMap::new(),
     };
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
@@ -120,6 +122,10 @@ fn run(
             mklist(&mut env.lists, args);
             None
         }
+        "mkloc" => {
+            mkloc(&mut env.locations, args);
+            None
+        }
         "exit" => process::exit(0),
         command => {
             match Command::new(command)
@@ -152,6 +158,16 @@ fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
         lists.insert(first.to_string(), args.map(|x| x.to_string()).collect());
     } else {
         execute!(stdout(), Print("No list name provided")).unwrap();
+    }
+}
+
+fn mkloc(locs: &mut HashMap<String, String>, args: Vec<String>) {
+    let mut args = args.iter();
+    if let Some(name) = args.next() {
+        locs.insert(name.to_string(), args.next().unwrap().to_string()); // TODO: clean up
+    } else {
+        execute!(stderr(), Print("Not enough arguments provided")).unwrap();
+        return;
     }
 }
 
