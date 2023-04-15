@@ -47,31 +47,7 @@ pub fn parse_input(
                 last_str.push(chars.next().unwrap());
                 continue;
             }
-            '%' => {
-                if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                    cmd.push(String::from(""));
-                }
-                current_token_index += 1;
 
-                let name = chars
-                    .by_ref()
-                    .take_while(|x| *x != '\n' && *x != ' ')
-                    .collect::<String>();
-                let mut new_replacement = vec![];
-                for index in 0..replacement.len() {
-                    for item in env.lists.get(&name).unwrap() {
-                        let mut replacement_pattern = replacement[index].clone();
-                        replacement_pattern.push((
-                            commandpart_index,
-                            current_token_index,
-                            item.to_string(),
-                        ));
-                        new_replacement.push(replacement_pattern);
-                    }
-                }
-                replacement = new_replacement;
-                continue;
-            }
             _ => (),
         }
         if !in_quotes {
@@ -118,6 +94,50 @@ pub fn parse_input(
                 '*' => {
                     in_glob_pattern = true;
                     last_str.push('*');
+                }
+                '%' => {
+                    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                        cmd.push(String::from(""));
+                    }
+                    current_token_index += 1;
+
+                    let name = chars
+                        .by_ref()
+                        .take_while(|x| *x != '\n' && *x != ' ')
+                        .collect::<String>();
+                    let mut new_replacement = vec![];
+                    for index in 0..replacement.len() {
+                        for item in env.lists.get(&name).unwrap() {
+                            let mut replacement_pattern = replacement[index].clone();
+                            replacement_pattern.push((
+                                commandpart_index,
+                                current_token_index,
+                                item.to_string(),
+                            ));
+                            new_replacement.push(replacement_pattern);
+                        }
+                    }
+                    replacement = new_replacement;
+                    continue;
+                }
+                '&' => {
+                    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                        cmd.push(String::from(""));
+                    }
+                    current_token_index += 1;
+
+                    let reference_index: usize = chars
+                        .by_ref()
+                        .take_while(|x| x.is_digit(10))
+                        .collect::<String>()
+                        .parse()
+                        .unwrap();
+
+                    for old_replacement in replacement.iter_mut() {
+                        let original_str = old_replacement[reference_index].2.clone();
+                        old_replacement.push((commandpart_index, current_token_index, original_str))
+                    }
+                    continue;
                 }
                 _ => last_str.push(i),
             }
