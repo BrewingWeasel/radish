@@ -65,7 +65,8 @@ fn generate_commands(
         let mut final_tokens = parsed_input.0.clone();
         for (command_part_index, token_index, contents) in replacement {
             if let CommandPart::Command(ref mut cmd) = final_tokens[command_part_index] {
-                cmd[token_index - 1] = contents;
+                // cmd[token_index - 1] = contents;
+                cmd[token_index - 1] = contents + &cmd[token_index - 1];
             }
         }
         if let Err(e) = run_input(final_tokens, env) {

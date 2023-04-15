@@ -2,7 +2,7 @@ use glob::glob;
 use std::env;
 
 // TODO: come up with a better name
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CommandPart {
     Command(Vec<String>),
     File((String, bool)),
@@ -18,9 +18,9 @@ pub fn parse_input(
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
     let mut commands: Vec<CommandPart> = vec![CommandPart::Command(vec![String::from("")])];
-    let mut chars = input.chars();
+    let mut chars = input.chars().peekable();
     let mut commandpart_index = 0;
-    let mut current_token_index = 0;
+    let mut current_token_index = 1;
     let mut replacement: Vec<Vec<(usize, usize, String)>> = vec![vec![]];
 
     while let Some(i) = chars.next() {
@@ -64,7 +64,7 @@ pub fn parse_input(
                     chars.next(); // Hacky work around to not treat the space after a pipe as a
                                   // command
                     commandpart_index += 1;
-                    current_token_index = 0;
+                    current_token_index = 1;
                 }
                 ' ' => {
                     if in_glob_pattern {
@@ -96,15 +96,10 @@ pub fn parse_input(
                     last_str.push('*');
                 }
                 '%' => {
-                    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                        cmd.push(String::from(""));
+                    let mut name = String::new();
+                    while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n') {
+                        name.push(digit)
                     }
-                    current_token_index += 1;
-
-                    let name = chars
-                        .by_ref()
-                        .take_while(|x| *x != '\n' && *x != ' ')
-                        .collect::<String>();
                     let mut new_replacement = vec![];
                     for index in 0..replacement.len() {
                         for item in env.lists.get(&name).unwrap() {
@@ -121,17 +116,11 @@ pub fn parse_input(
                     continue;
                 }
                 '&' => {
-                    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                        cmd.push(String::from(""));
+                    let mut reference_index = String::new();
+                    while let Some(digit) = chars.by_ref().next_if(|c| c.is_digit(10)) {
+                        reference_index.push(digit)
                     }
-                    current_token_index += 1;
-
-                    let reference_index: usize = chars
-                        .by_ref()
-                        .take_while(|x| x.is_digit(10))
-                        .collect::<String>()
-                        .parse()
-                        .unwrap();
+                    let reference_index: usize = reference_index.parse().unwrap();
 
                     for old_replacement in replacement.iter_mut() {
                         let original_str = old_replacement[reference_index].2.clone();
