@@ -7,7 +7,7 @@ use crossterm::{
 use std::{
     collections::HashMap,
     env,
-    fs::read_dir,
+    fs::{read_dir, File},
     io::{stderr, stdout, Write},
     path::Path,
     process::{self, Child, Command, Stdio},
@@ -81,8 +81,14 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
     let mut last_command: Option<Child> = None;
 
     for token_index in 0..input.len() {
+        if let Some(CommandPart::File(_)) = input.get(token_index) {
+            continue;
+        }
         let stdout = match input.get(token_index + 1) {
-            Some(_) => Stdio::piped(),
+            Some(part) => match part {
+                CommandPart::Command(_) => Stdio::piped(),
+                CommandPart::File((file_name, _)) => Stdio::from(File::create(file_name).unwrap()),
+            },
             None => Stdio::inherit(),
         };
         let tokens = match &mut input[token_index] {

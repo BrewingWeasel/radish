@@ -26,7 +26,7 @@ pub fn parse_input(
     while let Some(i) = chars.next() {
         let last_str = match commands.last_mut().unwrap() {
             CommandPart::Command(args) => args.last_mut().unwrap(),
-            _ => panic!("Took in file instead of argument"),
+            CommandPart::File((name, _)) => name,
         };
         match i {
             '"' => {
@@ -127,6 +127,13 @@ pub fn parse_input(
                         old_replacement.push((commandpart_index, current_token_index, original_str))
                     }
                     continue;
+                }
+                '>' => {
+                    commands.push(CommandPart::File((String::new(), true)));
+                    chars.next(); // Hacky work around to not treat the space after a pipe as a
+                                  // command
+                    commandpart_index += 1;
+                    current_token_index = 1;
                 }
                 _ => last_str.push(i),
             }
