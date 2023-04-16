@@ -132,9 +132,12 @@ pub fn parse_input(
                     continue;
                 }
                 '>' => {
-                    commands.push(CommandPart::File((String::new(), true)));
-                    chars.next(); // Hacky work around to not treat the space after a pipe as a
-                                  // command
+                    commands.push(CommandPart::File((String::new(), false)));
+                    if chars.next() == Some('>') {
+                        if let CommandPart::File((_, mut append)) = commands.last_mut().unwrap() {
+                            append = true;
+                        }
+                    }
                     commandpart_index += 1;
                     current_token_index = 1;
                 }

@@ -7,7 +7,7 @@ use crossterm::{
 use std::{
     collections::HashMap,
     env,
-    fs::{read_dir, File},
+    fs::{read_dir, File, OpenOptions},
     io::{stderr, stdout, Write},
     path::Path,
     process::{self, Child, Command, Stdio},
@@ -87,7 +87,19 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
         let stdout = match input.get(token_index + 1) {
             Some(part) => match part {
                 CommandPart::Command(_) => Stdio::piped(),
-                CommandPart::File((file_name, _)) => Stdio::from(File::create(file_name).unwrap()),
+                CommandPart::File((file_name, append)) => {
+                    if *append {
+                        Stdio::from(OpenOptions::new().write(true).open(file_name).unwrap())
+                    } else {
+                        Stdio::from(
+                            OpenOptions::new()
+                                .append(true)
+                                .create(true)
+                                .open(file_name)
+                                .unwrap(),
+                        )
+                    }
+                }
             },
             None => Stdio::inherit(),
         };
