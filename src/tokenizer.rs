@@ -67,6 +67,9 @@ pub fn parse_input(
                     current_token_index = 1;
                 }
                 ' ' => {
+                    if [Some(&' '), Some(&'\n'), Some(&'>')].contains(&chars.peek()) {
+                        continue;
+                    }
                     if in_glob_pattern {
                         let glob_pattern = last_str.clone();
                         if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
