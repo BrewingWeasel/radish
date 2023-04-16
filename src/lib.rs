@@ -7,7 +7,7 @@ use crossterm::{
 use std::{
     collections::HashMap,
     env,
-    fs::{read_dir, File, OpenOptions},
+    fs::{self, read_dir, File, OpenOptions},
     io::{stderr, stdout, Write},
     path::Path,
     process::{self, Child, Command, Stdio},
@@ -81,16 +81,13 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
     let mut last_command: Option<Child> = None;
 
     for token_index in 0..input.len() {
-        if let Some(CommandPart::File(_)) = input.get(token_index) {
+        if let Some(CommandPart::ToFile(_)) = input.get(token_index) {
             continue;
         }
         let stdout = match input.get(token_index + 1) {
             Some(part) => match part {
-                CommandPart::Command(_) => Stdio::piped(),
-                CommandPart::File((file_name, append)) => {
+                CommandPart::ToFile((file_name, append)) => {
                     if *append {
-                        Stdio::from(OpenOptions::new().write(true).open(file_name).unwrap())
-                    } else {
                         Stdio::from(
                             OpenOptions::new()
                                 .append(true)
@@ -98,8 +95,17 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
                                 .open(file_name)
                                 .unwrap(),
                         )
+                    } else {
+                        Stdio::from(
+                            OpenOptions::new()
+                                .write(true)
+                                .truncate(true)
+                                .open(file_name)
+                                .unwrap(),
+                        )
                     }
                 }
+                _ => Stdio::piped(),
             },
             None => Stdio::inherit(),
         };

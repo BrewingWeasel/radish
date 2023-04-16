@@ -5,9 +5,8 @@ use std::env;
 #[derive(Clone, Debug)]
 pub enum CommandPart {
     Command(Vec<String>),
-    File((String, bool)),
-    // TODO: allow sending stdout to a file or possibly somewhere else in
-    // the future
+    ToFile((String, bool)),
+    FromFile(String),
 }
 
 // TODO: Clean up
@@ -26,7 +25,8 @@ pub fn parse_input(
     while let Some(i) = chars.next() {
         let last_str = match commands.last_mut().unwrap() {
             CommandPart::Command(args) => args.last_mut().unwrap(),
-            CommandPart::File((name, _)) => name,
+            CommandPart::ToFile((name, _)) => name,
+            CommandPart::FromFile(name) => name,
         };
         match i {
             '"' => {
@@ -67,7 +67,7 @@ pub fn parse_input(
                     current_token_index = 1;
                 }
                 ' ' => {
-                    if [Some(&' '), Some(&'\n'), Some(&'>')].contains(&chars.peek()) {
+                    if [Some(&' '), Some(&'\n'), Some(&'<'), Some(&'>')].contains(&chars.peek()) {
                         continue;
                     }
                     if in_glob_pattern {
@@ -132,12 +132,18 @@ pub fn parse_input(
                     continue;
                 }
                 '>' => {
-                    commands.push(CommandPart::File((String::new(), false)));
+                    commands.push(CommandPart::ToFile((String::new(), false)));
                     if chars.next() == Some('>') {
-                        if let CommandPart::File((_, mut append)) = commands.last_mut().unwrap() {
-                            append = true;
+                        if let CommandPart::ToFile(options) = commands.last_mut().unwrap() {
+                            options.1 = true;
                         }
                     }
+                    commandpart_index += 1;
+                    current_token_index = 1;
+                }
+                '<' => {
+                    commands.push(CommandPart::FromFile(String::new()));
+                    chars.next();
                     commandpart_index += 1;
                     current_token_index = 1;
                 }
