@@ -7,8 +7,8 @@ use crossterm::{
 use std::{
     collections::HashMap,
     env,
-    fs::{self, read_dir, File, OpenOptions},
-    io::{stderr, stdout, Write},
+    fs::{read_dir, File, OpenOptions},
+    io::{stderr, stdout, BufRead, BufReader, Stdin, Write},
     path::Path,
     process::{self, Child, Command, Stdio},
 };
@@ -81,7 +81,7 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
     let mut last_command: Option<Child> = None;
 
     for token_index in 0..input.len() {
-        if let Some(CommandPart::ToFile(_)) = input.get(token_index) {
+        if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
             continue;
         }
         let stdout = match input.get(token_index + 1) {
@@ -105,21 +105,28 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
                         )
                     }
                 }
+                CommandPart::FromFile(_) => Stdio::inherit(),
                 _ => Stdio::piped(),
             },
             None => Stdio::inherit(),
         };
+
+        let stdin = if let Some(CommandPart::FromFile(file_name)) = input.get(token_index + 1) {
+            Stdio::from(File::open(file_name).unwrap())
+        } else {
+            if let Some(output) = last_command {
+                Stdio::from(output.stdout.unwrap())
+            } else {
+                Stdio::inherit()
+            }
+        };
+
         let tokens = match &mut input[token_index] {
             CommandPart::Command(cmd) => cmd,
             _ => unreachable!(),
         };
         let command = tokens.remove(0);
 
-        let stdin = if let Some(output) = last_command {
-            Stdio::from(output.stdout.unwrap())
-        } else {
-            Stdio::inherit()
-        };
         last_command = run(&command, tokens.to_vec(), stdout, stdin, env);
     }
     if let Some(mut cmd) = last_command {
