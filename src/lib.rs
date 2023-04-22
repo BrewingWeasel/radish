@@ -9,8 +9,8 @@ use std::{
     env,
     error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stderr, stdout, Write},
-    path::Path,
+    io::{stderr, stdout, BufRead, BufReader, Write},
+    path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
 };
 use tokenizer::CommandPart;
@@ -39,6 +39,12 @@ pub struct Env {
     lists: HashMap<String, Vec<String>>,
     locations: HashMap<String, String>,
 }
+fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
+    for line in BufReader::new(File::open(path)?).lines() {
+        run_from_string(&line.unwrap(), env)?;
+    }
+    Ok(())
+}
 
 pub fn run_radish() {
     enable_raw_mode().unwrap();
@@ -52,6 +58,7 @@ pub fn run_radish() {
         lists: HashMap::new(),
         locations: HashMap::new(),
     };
+    _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
         print!("~> ");
