@@ -67,7 +67,9 @@ pub fn parse_input(
                     current_token_index = 1;
                 }
                 ' ' => {
-                    if [Some(&' '), Some(&'\n'), Some(&'<'), Some(&'>')].contains(&chars.peek()) {
+                    if [Some(&' '), Some(&'\n'), Some(&'<'), Some(&'>'), Some(&'|')]
+                        .contains(&chars.peek())
+                    {
                         continue;
                     }
                     if in_glob_pattern {
