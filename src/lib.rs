@@ -38,6 +38,7 @@ pub struct Env {
     prompt_length: u16,
     lists: HashMap<String, Vec<String>>,
     locations: HashMap<String, String>,
+    aliases: HashMap<String, String>,
 }
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     for line in BufReader::new(File::open(path)?).lines() {
@@ -57,6 +58,7 @@ pub fn run_radish() {
         prompt_length: 3,
         lists: HashMap::new(),
         locations: HashMap::new(),
+        aliases: HashMap::new(),
     };
     _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
     loop {
@@ -78,7 +80,13 @@ fn run_from_string(input: &String, env: &mut Env) -> Result<(), Box<dyn Error>> 
     if input.is_empty() {
         return Ok(());
     }
-    let parsed_input = tokenizer::parse_input(&input, &env)?;
+    let mut new_input = input.clone();
+    for alias in env.aliases.keys() {
+        if new_input.starts_with(alias) {
+            new_input = new_input.replacen(alias, env.aliases.get(alias).unwrap(), 1);
+        }
+    }
+    let parsed_input = tokenizer::parse_input(&new_input, &env)?;
     generate_commands(parsed_input, env);
     Ok(())
 }
@@ -208,6 +216,10 @@ fn run(
             mklist(&mut env.lists, args);
             None
         }
+        "alias" => {
+            alias(&mut env.aliases, args.first().unwrap());
+            None
+        }
         "mkloc" => {
             mkloc(&mut env.locations, args);
             None
@@ -248,13 +260,22 @@ fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
 }
 
 fn mkloc(locs: &mut HashMap<String, String>, args: Vec<String>) {
-    let mut args = args.iter();
-    if let Some(name) = args.next() {
-        locs.insert(name.to_string(), args.next().unwrap().to_string()); // TODO: clean up
-    } else {
-        execute!(stderr(), Print("Not enough arguments provided")).unwrap();
+    // TODO: clean up code
+    if args.len() != 2 {
+        eprintln!("Wrong number of arguments provided");
         return;
     }
+    let mut args = args.iter();
+    if let Some(name) = args.next() {
+        locs.insert(name.to_string(), args.next().unwrap().to_string());
+    }
+}
+fn alias(aliases: &mut HashMap<String, String>, args: &String) {
+    let mut args = args.split("=");
+    aliases.insert(
+        args.next().unwrap().to_string(),
+        args.next().unwrap().to_string(),
+    );
 }
 
 pub fn get_all_commands() -> Vec<String> {
