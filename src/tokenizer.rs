@@ -9,6 +9,18 @@ pub enum CommandPart {
     FromFile(String),
 }
 
+pub fn glob_patterns(last_str: &String, commands: &mut Vec<CommandPart>) {
+    let glob_pattern = last_str.clone();
+    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+        cmd.pop();
+        for entry in glob(&glob_pattern).unwrap() {
+            if let Ok(path) = entry {
+                cmd.push(path.display().to_string())
+            }
+        }
+    }
+}
+
 // TODO: Clean up
 pub fn parse_input(
     input: &str,
@@ -22,137 +34,150 @@ pub fn parse_input(
     let mut current_token_index = 1;
     let mut replacement: Vec<Vec<(usize, usize, String)>> = vec![vec![]];
 
-    while let Some(i) = chars.next() {
-        let last_str = match commands.last_mut().unwrap() {
-            CommandPart::Command(args) => args.last_mut().unwrap(),
-            CommandPart::ToFile((name, _)) => name,
-            CommandPart::FromFile(name) => name,
-        };
-        match i {
-            '"' => {
-                in_quotes = !in_quotes;
-                continue;
-            }
-            '$' => {
-                let variable_name = &env::var(
-                    &chars
-                        .by_ref()
-                        .take_while(|x| *x != '\n' && *x != ' ')
-                        .collect::<String>(),
-                );
-                last_str.push_str(variable_name.as_ref().unwrap());
-                continue;
-            }
-            '\\' => {
-                last_str.push(chars.next().unwrap());
-                continue;
-            }
-
-            _ => (),
-        }
-        if !in_quotes {
-            match i {
-                '~' => last_str.push_str(
-                    &dirs::home_dir()
-                        .unwrap()
-                        .into_os_string()
-                        .into_string()
-                        .unwrap(),
-                ),
-                '|' => {
-                    commands.push(CommandPart::Command(vec![String::from("")]));
-                    chars.next(); // Hacky work around to not treat the space after a pipe as a
-                                  // command
-                    commandpart_index += 1;
-                    current_token_index = 1;
-                }
-                ' ' => {
-                    if [Some(&' '), Some(&'\n'), Some(&'<'), Some(&'>'), Some(&'|')]
-                        .contains(&chars.peek())
-                    {
-                        continue;
+    loop {
+        let c = chars.next();
+        if (c == Some(' ') || c.is_none()) && !in_quotes && in_glob_pattern {
+            if let CommandPart::Command(args) = commands.last().unwrap() {
+                let glob_pattern = args.last().unwrap().clone();
+                if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                    cmd.pop();
+                    for entry in glob(&glob_pattern).unwrap() {
+                        if let Ok(path) = entry {
+                            cmd.push(path.display().to_string())
+                        }
                     }
-                    if in_glob_pattern {
-                        let glob_pattern = last_str.clone();
+                }
+            }
+            in_glob_pattern = false;
+        }
+        if c.is_none() {
+            break;
+        }
+        if let Some(i) = c {
+            let last_str = match commands.last_mut().unwrap() {
+                CommandPart::Command(args) => args.last_mut().unwrap(),
+                CommandPart::ToFile((name, _)) => name,
+                CommandPart::FromFile(name) => name,
+            };
+            match i {
+                '"' => {
+                    in_quotes = !in_quotes;
+                    continue;
+                }
+                '$' => {
+                    let variable_name = &env::var(
+                        &chars
+                            .by_ref()
+                            .take_while(|x| *x != '\n' && *x != ' ')
+                            .collect::<String>(),
+                    );
+                    last_str.push_str(variable_name.as_ref().unwrap());
+                    continue;
+                }
+                '\\' => {
+                    last_str.push(chars.next().unwrap());
+                    continue;
+                }
+
+                _ => (),
+            }
+            if !in_quotes {
+                match i {
+                    '~' => last_str.push_str(
+                        &dirs::home_dir()
+                            .unwrap()
+                            .into_os_string()
+                            .into_string()
+                            .unwrap(),
+                    ),
+                    '|' => {
+                        commands.push(CommandPart::Command(vec![String::from("")]));
+                        chars.next(); // Hacky work around to not treat the space after a pipe as a
+                                      // command
+                        commandpart_index += 1;
+                        current_token_index = 1;
+                    }
+                    ' ' => {
+                        if [Some(&' '), None, Some(&'<'), Some(&'>'), Some(&'|')]
+                            .contains(&chars.peek())
+                        {
+                            continue;
+                        }
                         if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                            cmd.pop();
-                            for entry in glob(&glob_pattern).unwrap() {
-                                if let Ok(path) = entry {
-                                    cmd.push(path.display().to_string())
-                                }
+                            cmd.push(String::from(""));
+                        }
+                        current_token_index += 1;
+                    }
+                    '@' => {
+                        let name = chars
+                            .by_ref()
+                            .take_while(|x| *x != '\n' && *x != ' ')
+                            .collect::<String>();
+                        last_str.push_str(&env.locations.get(&name).unwrap())
+                    }
+                    '*' => {
+                        in_glob_pattern = true;
+                        last_str.push('*');
+                    }
+                    '%' => {
+                        let mut name = String::new();
+                        while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n')
+                        {
+                            name.push(digit)
+                        }
+                        let mut new_replacement = vec![];
+                        for index in 0..replacement.len() {
+                            for item in env.lists.get(&name).unwrap() {
+                                let mut replacement_pattern = replacement[index].clone();
+                                replacement_pattern.push((
+                                    commandpart_index,
+                                    current_token_index,
+                                    item.to_string(),
+                                ));
+                                new_replacement.push(replacement_pattern);
                             }
                         }
+                        replacement = new_replacement;
+                        continue;
                     }
-                    in_glob_pattern = false;
-                    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-                        cmd.push(String::from(""));
-                    }
-                    current_token_index += 1;
-                }
-                '@' => {
-                    let name = chars
-                        .by_ref()
-                        .take_while(|x| *x != '\n' && *x != ' ')
-                        .collect::<String>();
-                    last_str.push_str(&env.locations.get(&name).unwrap())
-                }
-                '*' => {
-                    in_glob_pattern = true;
-                    last_str.push('*');
-                }
-                '%' => {
-                    let mut name = String::new();
-                    while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n') {
-                        name.push(digit)
-                    }
-                    let mut new_replacement = vec![];
-                    for index in 0..replacement.len() {
-                        for item in env.lists.get(&name).unwrap() {
-                            let mut replacement_pattern = replacement[index].clone();
-                            replacement_pattern.push((
+                    '&' => {
+                        let mut reference_index = String::new();
+                        while let Some(digit) = chars.by_ref().next_if(|c| c.is_digit(10)) {
+                            reference_index.push(digit)
+                        }
+                        let reference_index: usize = reference_index.parse().unwrap();
+
+                        for old_replacement in replacement.iter_mut() {
+                            let original_str = old_replacement[reference_index].2.clone();
+                            old_replacement.push((
                                 commandpart_index,
                                 current_token_index,
-                                item.to_string(),
-                            ));
-                            new_replacement.push(replacement_pattern);
+                                original_str,
+                            ))
                         }
+                        continue;
                     }
-                    replacement = new_replacement;
-                    continue;
-                }
-                '&' => {
-                    let mut reference_index = String::new();
-                    while let Some(digit) = chars.by_ref().next_if(|c| c.is_digit(10)) {
-                        reference_index.push(digit)
-                    }
-                    let reference_index: usize = reference_index.parse().unwrap();
-
-                    for old_replacement in replacement.iter_mut() {
-                        let original_str = old_replacement[reference_index].2.clone();
-                        old_replacement.push((commandpart_index, current_token_index, original_str))
-                    }
-                    continue;
-                }
-                '>' => {
-                    commands.push(CommandPart::ToFile((String::new(), false)));
-                    if chars.next() == Some('>') {
-                        if let CommandPart::ToFile(options) = commands.last_mut().unwrap() {
-                            options.1 = true;
+                    '>' => {
+                        commands.push(CommandPart::ToFile((String::new(), false)));
+                        if chars.next() == Some('>') {
+                            if let CommandPart::ToFile(options) = commands.last_mut().unwrap() {
+                                options.1 = true;
+                            }
                         }
+                        commandpart_index += 1;
+                        current_token_index = 1;
                     }
-                    commandpart_index += 1;
-                    current_token_index = 1;
+                    '<' => {
+                        commands.push(CommandPart::FromFile(String::new()));
+                        chars.next();
+                        commandpart_index += 1;
+                        current_token_index = 1;
+                    }
+                    _ => last_str.push(i),
                 }
-                '<' => {
-                    commands.push(CommandPart::FromFile(String::new()));
-                    chars.next();
-                    commandpart_index += 1;
-                    current_token_index = 1;
-                }
-                _ => last_str.push(i),
+            } else {
+                last_str.push(i);
             }
-        } else {
-            last_str.push(i);
         }
     }
     (commands, replacement)
