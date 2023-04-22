@@ -84,7 +84,7 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
         if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
             continue;
         }
-        let stdout = match input.get(token_index + 1) {
+        let mut stdout = match input.get(token_index + 1) {
             Some(part) => match part {
                 CommandPart::ToFile((file_name, append)) => {
                     if *append {
@@ -99,6 +99,7 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
                         Stdio::from(
                             OpenOptions::new()
                                 .write(true)
+                                .create(true)
                                 .truncate(true)
                                 .open(file_name)
                                 .unwrap(),
@@ -112,6 +113,27 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
         };
 
         let stdin = if let Some(CommandPart::FromFile(file_name)) = input.get(token_index + 1) {
+            // Do in a way so this is no longer necessary
+            if let Some(CommandPart::ToFile((file_name, append))) = input.get(token_index + 2) {
+                stdout = if *append {
+                    Stdio::from(
+                        OpenOptions::new()
+                            .append(true)
+                            .create(true)
+                            .open(file_name)
+                            .unwrap(),
+                    )
+                } else {
+                    Stdio::from(
+                        OpenOptions::new()
+                            .write(true)
+                            .create(true)
+                            .truncate(true)
+                            .open(file_name)
+                            .unwrap(),
+                    )
+                }
+            }
             Stdio::from(File::open(file_name).unwrap())
         } else {
             if let Some(output) = last_command {
