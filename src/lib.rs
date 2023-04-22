@@ -7,8 +7,9 @@ use crossterm::{
 use std::{
     collections::HashMap,
     env,
+    error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stderr, stdout, BufRead, BufReader, Stdin, Write},
+    io::{stderr, stdout, Write},
     path::Path,
     process::{self, Child, Command, Stdio},
 };
@@ -16,6 +17,20 @@ use tokenizer::CommandPart;
 
 mod input_reader;
 mod tokenizer;
+
+#[derive(Debug, Clone)]
+pub struct InvalidItemError;
+
+impl Error for InvalidItemError {}
+
+impl std::fmt::Display for InvalidItemError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Oops! Looks like the item you're looking for doesn't exist"
+        )
+    }
+}
 
 pub struct Env {
     // More in the future
@@ -45,10 +60,20 @@ pub fn run_radish() {
         if input.is_empty() {
             continue;
         }
-        let parsed_input = tokenizer::parse_input(&input, &env);
-        generate_commands(parsed_input, &mut env);
+        if let Err(e) = run_from_string(&input, &mut env) {
+            eprintln!("{}", e);
+        }
         history.push(input);
     }
+}
+
+fn run_from_string(input: &String, env: &mut Env) -> Result<(), Box<dyn Error>> {
+    if input.is_empty() {
+        return Ok(());
+    }
+    let parsed_input = tokenizer::parse_input(&input, &env)?;
+    generate_commands(parsed_input, env);
+    Ok(())
 }
 
 fn generate_commands(
@@ -57,7 +82,7 @@ fn generate_commands(
 ) {
     if parsed_input.1.is_empty() {
         if let Err(e) = run_input(parsed_input.0, env) {
-            println!("Oops! {e}");
+            eprintln!("Oops! {e}");
         }
         return;
     }
@@ -70,7 +95,7 @@ fn generate_commands(
             }
         }
         if let Err(e) = run_input(final_tokens, env) {
-            println!("Oops! {e}");
+            eprintln!("Oops! {e}");
         }
     }
 }

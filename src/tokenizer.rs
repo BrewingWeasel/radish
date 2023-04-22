@@ -1,5 +1,5 @@
 use glob::glob;
-use std::env;
+use std::{env, error::Error};
 
 // TODO: come up with a better name
 #[derive(Clone, Debug)]
@@ -9,23 +9,11 @@ pub enum CommandPart {
     FromFile(String),
 }
 
-pub fn glob_patterns(last_str: &String, commands: &mut Vec<CommandPart>) {
-    let glob_pattern = last_str.clone();
-    if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
-        cmd.pop();
-        for entry in glob(&glob_pattern).unwrap() {
-            if let Ok(path) = entry {
-                cmd.push(path.display().to_string())
-            }
-        }
-    }
-}
-
 // TODO: Clean up
 pub fn parse_input(
     input: &str,
     env: &crate::Env,
-) -> (Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>) {
+) -> Result<(Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>), Box<dyn Error>> {
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
     let mut commands: Vec<CommandPart> = vec![CommandPart::Command(vec![String::from("")])];
@@ -41,7 +29,7 @@ pub fn parse_input(
                 let glob_pattern = args.last().unwrap().clone();
                 if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
                     cmd.pop();
-                    for entry in glob(&glob_pattern).unwrap() {
+                    for entry in glob(&glob_pattern)? {
                         if let Ok(path) = entry {
                             cmd.push(path.display().to_string())
                         }
@@ -113,7 +101,7 @@ pub fn parse_input(
                             .by_ref()
                             .take_while(|x| *x != '\n' && *x != ' ')
                             .collect::<String>();
-                        last_str.push_str(&env.locations.get(&name).unwrap())
+                        last_str.push_str(&env.locations.get(&name).ok_or(crate::InvalidItemError)?)
                     }
                     '*' => {
                         in_glob_pattern = true;
@@ -127,7 +115,7 @@ pub fn parse_input(
                         }
                         let mut new_replacement = vec![];
                         for index in 0..replacement.len() {
-                            for item in env.lists.get(&name).unwrap() {
+                            for item in env.lists.get(&name).ok_or(crate::InvalidItemError)? {
                                 let mut replacement_pattern = replacement[index].clone();
                                 replacement_pattern.push((
                                     commandpart_index,
@@ -180,5 +168,5 @@ pub fn parse_input(
             }
         }
     }
-    (commands, replacement)
+    Ok((commands, replacement))
 }
