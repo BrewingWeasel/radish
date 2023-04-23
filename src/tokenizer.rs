@@ -76,8 +76,12 @@ pub fn parse_input(
                     }
                 }
                 '\\' => {
-                    last_str.push(chars.next().unwrap());
-                    continue;
+                    if ['"', ' ', '$', '~', '*', '@', '%', '&']
+                        .contains(chars.peek().ok_or("No character after \\!")?)
+                    {
+                        last_str.push(chars.next().unwrap());
+                        continue;
+                    }
                 }
 
                 _ => (),

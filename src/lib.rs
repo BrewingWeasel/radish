@@ -62,7 +62,9 @@ pub fn run_radish() {
     _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
-        print!("{}", env::var("PS1").unwrap_or("~> ".to_string()));
+        let prompt = unescape(env::var("PS1").unwrap_or("~> ".to_string()));
+        env.prompt_length = prompt.len().try_into().unwrap();
+        print!("{}", prompt);
         stdout().flush().unwrap();
         enable_raw_mode().unwrap();
         let input = input_reader::get_input(&mut history, &env);
@@ -321,4 +323,17 @@ pub fn get_all_commands() -> Vec<String> {
                 .collect::<Vec<String>>()
         })
         .collect()
+}
+
+fn unescape(mut input: String) -> String {
+    let replacements = [
+        ("\\t", "\t"),
+        ("\\x1b", "\x1b"),
+        ("\\033", "\x1b"),
+        ("\\n", "\n"),
+    ];
+    for replacement in replacements {
+        input = input.replace(replacement.0, replacement.1);
+    }
+    input
 }
