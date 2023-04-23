@@ -9,7 +9,7 @@ use std::{
     env,
     error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stderr, stdout, BufRead, BufReader, Write},
+    io::{stdout, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
 };
@@ -86,7 +86,7 @@ fn run_from_string(input: &String, env: &mut Env) -> Result<(), Box<dyn Error>> 
             new_input = new_input.replacen(alias, env.aliases.get(alias).unwrap(), 1);
         }
     }
-    let parsed_input = tokenizer::parse_input(&new_input, &env)?;
+    let parsed_input = tokenizer::parse_input(&new_input, env)?;
     generate_commands(parsed_input, env);
     Ok(())
 }
@@ -175,12 +175,10 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
                 }
             }
             Stdio::from(File::open(file_name).unwrap())
+        } else if let Some(output) = last_command {
+            Stdio::from(output.stdout.unwrap())
         } else {
-            if let Some(output) = last_command {
-                Stdio::from(output.stdout.unwrap())
-            } else {
-                Stdio::inherit()
-            }
+            Stdio::inherit()
         };
 
         let tokens = match &mut input[token_index] {
@@ -243,7 +241,7 @@ fn run(
 }
 
 fn cd(args: Vec<String>) {
-    let newdir = match args.iter().next() {
+    let newdir = match args.first() {
         None => dirs::home_dir().unwrap(),
         Some(dir) => Path::new(dir).into(),
     };
@@ -270,8 +268,8 @@ fn mkloc(locs: &mut HashMap<String, String>, args: Vec<String>) {
         locs.insert(name.to_string(), args.next().unwrap().to_string());
     }
 }
-fn alias(aliases: &mut HashMap<String, String>, args: &String) {
-    let mut args = args.split("=");
+fn alias(aliases: &mut HashMap<String, String>, args: &str) {
+    let mut args = args.split('=');
     aliases.insert(
         args.next().unwrap().to_string(),
         args.next().unwrap().to_string(),

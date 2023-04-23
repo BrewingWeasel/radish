@@ -5,7 +5,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::Clear,
 };
-use std::{borrow::Cow, fs::read_dir, io::stdout, process};
+use std::{borrow::Cow, cmp::Ordering, fs::read_dir, io::stdout, process};
 
 pub fn get_input(history: &mut Vec<String>, env: &crate::Env) -> String {
     #[derive(Debug)]
@@ -185,17 +185,19 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
         while input_chars.next() == option_chars.next() {
             cur_shared += 1;
         }
-        if cur_shared < most_shared {
-            if number_of_shared == 0 {
-                return Some(&options[i - 1]);
-            } else {
-                return None;
+        match cur_shared.cmp(&most_shared) {
+            Ordering::Less => {
+                if number_of_shared == 0 {
+                    return Some(&options[i - 1]);
+                } else {
+                    return None;
+                }
             }
-        } else if cur_shared == most_shared {
-            number_of_shared += 1;
-        } else {
-            number_of_shared = 0;
-            most_shared = cur_shared;
+            Ordering::Greater => {
+                number_of_shared = 0;
+                most_shared = cur_shared;
+            }
+            Ordering::Equal => number_of_shared += 1,
         }
     }
     None

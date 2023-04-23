@@ -29,10 +29,8 @@ pub fn parse_input(
                 let glob_pattern = args.last().unwrap().clone();
                 if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
                     cmd.pop();
-                    for entry in glob(&glob_pattern)? {
-                        if let Ok(path) = entry {
-                            cmd.push(path.display().to_string())
-                        }
+                    for entry in glob(&glob_pattern)?.flatten() {
+                        cmd.push(entry.display().to_string())
                     }
                 }
             }
@@ -101,7 +99,7 @@ pub fn parse_input(
                             .by_ref()
                             .take_while(|x| *x != '\n' && *x != ' ')
                             .collect::<String>();
-                        last_str.push_str(&env.locations.get(&name).ok_or(crate::InvalidItemError)?)
+                        last_str.push_str(env.locations.get(&name).ok_or(crate::InvalidItemError)?)
                     }
                     '*' => {
                         in_glob_pattern = true;
@@ -114,9 +112,9 @@ pub fn parse_input(
                             name.push(digit)
                         }
                         let mut new_replacement = vec![];
-                        for index in 0..replacement.len() {
+                        for pattern in replacement {
                             for item in env.lists.get(&name).ok_or(crate::InvalidItemError)? {
-                                let mut replacement_pattern = replacement[index].clone();
+                                let mut replacement_pattern = pattern.clone();
                                 replacement_pattern.push((
                                     commandpart_index,
                                     current_token_index,
@@ -130,7 +128,7 @@ pub fn parse_input(
                     }
                     '&' => {
                         let mut reference_index = String::new();
-                        while let Some(digit) = chars.by_ref().next_if(|c| c.is_digit(10)) {
+                        while let Some(digit) = chars.by_ref().next_if(|c| c.is_ascii_digit()) {
                             reference_index.push(digit)
                         }
                         let reference_index: usize = reference_index.parse().unwrap();
