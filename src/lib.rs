@@ -12,6 +12,7 @@ use std::{
     io::{stdout, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
+    str::from_utf8,
 };
 use tokenizer::CommandPart;
 
@@ -63,7 +64,12 @@ pub fn run_radish() {
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
         let prompt = unescape(env::var("PS1").unwrap_or("~> ".to_string()));
-        env.prompt_length = prompt.len().try_into().unwrap();
+        let stripped_prompt = strip_ansi_escapes::strip(prompt.lines().last().unwrap());
+        env.prompt_length = from_utf8(&stripped_prompt.unwrap())
+            .unwrap()
+            .len()
+            .try_into()
+            .unwrap();
         print!("{}", prompt);
         stdout().flush().unwrap();
         enable_raw_mode().unwrap();
