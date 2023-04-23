@@ -48,7 +48,6 @@ fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run_radish() {
-    enable_raw_mode().unwrap();
     let mut history: Vec<String> = vec![];
     let mut commands = get_all_commands();
     commands.sort_unstable();
@@ -63,9 +62,11 @@ pub fn run_radish() {
     _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
-        print!("~> ");
+        print!("{}", env::var("PS1").unwrap_or("~> ".to_string()));
         stdout().flush().unwrap();
+        enable_raw_mode().unwrap();
         let input = input_reader::get_input(&mut history, &env);
+        disable_raw_mode().unwrap();
         if input.is_empty() {
             continue;
         }
@@ -121,7 +122,6 @@ fn run_input(
     env: &mut Env,
     output: bool,
 ) -> crossterm::Result<Option<Child>> {
-    disable_raw_mode().unwrap();
     // let mut input = input.deref().iter().peekable();
     let mut last_command: Option<Child> = None;
 
@@ -202,10 +202,8 @@ fn run_input(
     }
     if let Some(mut cmd) = last_command {
         cmd.wait()?;
-        enable_raw_mode().unwrap();
         Ok(Some(cmd))
     } else {
-        enable_raw_mode().unwrap();
         Ok(None)
     }
 }
