@@ -1,5 +1,5 @@
 use glob::glob;
-use std::{env, error::Error};
+use std::{env, error::Error, io::Read};
 
 // TODO: come up with a better name
 #[derive(Clone, Debug)]
@@ -12,7 +12,7 @@ pub enum CommandPart {
 // TODO: Clean up
 pub fn parse_input(
     input: &str,
-    env: &crate::Env,
+    env: &mut crate::Env,
 ) -> Result<(Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>), Box<dyn Error>> {
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
@@ -51,14 +51,28 @@ pub fn parse_input(
                     continue;
                 }
                 '$' => {
-                    let variable_name = &env::var(
-                        &chars
-                            .by_ref()
-                            .take_while(|x| *x != '\n' && *x != ' ')
-                            .collect::<String>(),
-                    );
-                    last_str.push_str(variable_name.as_ref().unwrap());
-                    continue;
+                    if let Some(&'(') = chars.peek() {
+                        chars.next();
+                        let new_cmd = &chars.by_ref().take_while(|x| *x != ')').collect::<String>();
+                        let mut output = crate::run_from_string(new_cmd, env, false)?
+                            .ok_or("running command failed")?
+                            .stdout
+                            .ok_or("No stdout from command")?;
+                        let mut buffer = String::new();
+                        output.read_to_string(&mut buffer)?;
+                        let final_output = buffer.trim_end();
+                        last_str.push_str(final_output);
+                        continue;
+                    } else {
+                        let variable_name = &env::var(
+                            &chars
+                                .by_ref()
+                                .take_while(|x| *x != '\n' && *x != ' ')
+                                .collect::<String>(),
+                        );
+                        last_str.push_str(variable_name.as_ref().unwrap());
+                        continue;
+                    }
                 }
                 '\\' => {
                     last_str.push(chars.next().unwrap());

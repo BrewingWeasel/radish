@@ -42,7 +42,7 @@ pub struct Env {
 }
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     for line in BufReader::new(File::open(path)?).lines() {
-        run_from_string(&line.unwrap(), env)?;
+        run_from_string(&line.unwrap(), env, true)?;
     }
     Ok(())
 }
@@ -69,16 +69,20 @@ pub fn run_radish() {
         if input.is_empty() {
             continue;
         }
-        if let Err(e) = run_from_string(&input, &mut env) {
+        if let Err(e) = run_from_string(&input, &mut env, true) {
             eprintln!("{}", e);
         }
         history.push(input);
     }
 }
 
-fn run_from_string(input: &String, env: &mut Env) -> Result<(), Box<dyn Error>> {
+fn run_from_string(
+    input: &String,
+    env: &mut Env,
+    output: bool,
+) -> Result<Option<Child>, Box<dyn Error>> {
     if input.is_empty() || input.starts_with('#') {
-        return Ok(());
+        return Ok(None);
     }
 
     let mut new_input = input.clone();
@@ -88,35 +92,35 @@ fn run_from_string(input: &String, env: &mut Env) -> Result<(), Box<dyn Error>> 
         }
     }
     let parsed_input = tokenizer::parse_input(&new_input, env)?;
-    generate_commands(parsed_input, env);
-    Ok(())
+    Ok(generate_commands(parsed_input, env, output)?)
 }
 
 fn generate_commands(
     parsed_input: (Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>),
     env: &mut Env,
-) {
+    output: bool,
+) -> crossterm::Result<Option<Child>> {
     if parsed_input.1.is_empty() {
-        if let Err(e) = run_input(parsed_input.0, env) {
-            eprintln!("Oops! {e}");
-        }
-        return;
+        return run_input(parsed_input.0, env, output);
     }
+    let mut last_command = None;
     for replacement in parsed_input.1 {
         let mut final_tokens = parsed_input.0.clone();
         for (command_part_index, token_index, contents) in replacement {
             if let CommandPart::Command(ref mut cmd) = final_tokens[command_part_index] {
-                // cmd[token_index - 1] = contents;
                 cmd[token_index - 1] = contents + &cmd[token_index - 1];
             }
         }
-        if let Err(e) = run_input(final_tokens, env) {
-            eprintln!("Oops! {e}");
-        }
+        last_command = run_input(final_tokens, env, output)?;
     }
+    Ok(last_command)
 }
 
-fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm::Result<()> {
+fn run_input(
+    mut input: Vec<tokenizer::CommandPart>,
+    env: &mut Env,
+    output: bool,
+) -> crossterm::Result<Option<Child>> {
     disable_raw_mode().unwrap();
     // let mut input = input.deref().iter().peekable();
     let mut last_command: Option<Child> = None;
@@ -150,7 +154,13 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
                 CommandPart::FromFile(_) => Stdio::inherit(),
                 _ => Stdio::piped(),
             },
-            None => Stdio::inherit(),
+            None => {
+                if output {
+                    Stdio::inherit()
+                } else {
+                    Stdio::piped()
+                }
+            }
         };
 
         let stdin = if let Some(CommandPart::FromFile(file_name)) = input.get(token_index + 1) {
@@ -192,9 +202,12 @@ fn run_input(mut input: Vec<tokenizer::CommandPart>, env: &mut Env) -> crossterm
     }
     if let Some(mut cmd) = last_command {
         cmd.wait()?;
+        enable_raw_mode().unwrap();
+        Ok(Some(cmd))
+    } else {
+        enable_raw_mode().unwrap();
+        Ok(None)
     }
-    enable_raw_mode().unwrap();
-    Ok(())
 }
 
 fn run(
