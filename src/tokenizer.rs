@@ -67,7 +67,7 @@ pub fn parse_input(
                         let mut variable_name = String::new();
                         while let Some(digit) = chars
                             .by_ref()
-                            .next_if(|c| *c != ' ' && *c != '"' && *c != '\n')
+                            .next_if(|c| *c != ' ' && *c != '"' && *c != '/' && *c != '\n')
                         {
                             variable_name.push(digit)
                         }
@@ -76,7 +76,7 @@ pub fn parse_input(
                     }
                 }
                 '\\' => {
-                    if ['"', ' ', '$', '~', '*', '@', '%', '&']
+                    if ['"', ' ', '$', '~', '*', '@', '%', '&', '\\']
                         .contains(chars.peek().ok_or("No character after \\!")?)
                     {
                         last_str.push(chars.next().unwrap());
