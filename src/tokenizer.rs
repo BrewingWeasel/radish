@@ -168,6 +168,14 @@ pub fn parse_input(
                         }
                         last_str.push('#')
                     }
+                    '\'' => {
+                        last_str.push_str(
+                            &chars
+                                .by_ref()
+                                .take_while(|x| *x != '\'')
+                                .collect::<String>(),
+                        );
+                    }
                     _ => last_str.push(i),
                 }
             } else {
