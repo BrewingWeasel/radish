@@ -159,6 +159,15 @@ pub fn parse_input(
                         commandpart_index += 1;
                         current_token_index = 1;
                     }
+                    '#' => {
+                        if last_str == "" {
+                            if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                                cmd.pop();
+                            }
+                            break;
+                        }
+                        last_str.push('#')
+                    }
                     _ => last_str.push(i),
                 }
             } else {

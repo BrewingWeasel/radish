@@ -77,9 +77,10 @@ pub fn run_radish() {
 }
 
 fn run_from_string(input: &String, env: &mut Env) -> Result<(), Box<dyn Error>> {
-    if input.is_empty() {
+    if input.is_empty() || input.starts_with('#') {
         return Ok(());
     }
+
     let mut new_input = input.clone();
     for alias in env.aliases.keys() {
         if new_input.starts_with(alias) {
