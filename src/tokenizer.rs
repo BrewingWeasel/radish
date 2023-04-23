@@ -64,13 +64,12 @@ pub fn parse_input(
                         last_str.push_str(final_output);
                         continue;
                     } else {
-                        let variable_name = &env::var(
-                            &chars
-                                .by_ref()
-                                .take_while(|x| *x != '\n' && *x != ' ')
-                                .collect::<String>(),
-                        );
-                        last_str.push_str(variable_name.as_ref().unwrap());
+                        let mut variable_name = String::new();
+                        while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n')
+                        {
+                            variable_name.push(digit)
+                        }
+                        last_str.push_str(&env::var(variable_name).unwrap());
                         continue;
                     }
                 }
