@@ -232,6 +232,10 @@ fn run(
             alias(&mut env.aliases, args.first().unwrap());
             None
         }
+        "export" => {
+            export(args.first().unwrap());
+            None
+        }
         "mkloc" => {
             mkloc(&mut env.locations, args);
             None
@@ -281,6 +285,14 @@ fn mkloc(locs: &mut HashMap<String, String>, args: Vec<String>) {
     if let Some(name) = args.next() {
         locs.insert(name.to_string(), args.next().unwrap().to_string());
     }
+}
+
+fn export(args: &str) {
+    let mut args = args.split('=');
+    env::set_var(
+        args.next().unwrap().to_string(),
+        args.next().unwrap().to_string(),
+    );
 }
 fn alias(aliases: &mut HashMap<String, String>, args: &str) {
     let mut args = args.split('=');

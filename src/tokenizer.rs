@@ -65,11 +65,13 @@ pub fn parse_input(
                         continue;
                     } else {
                         let mut variable_name = String::new();
-                        while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n')
+                        while let Some(digit) = chars
+                            .by_ref()
+                            .next_if(|c| *c != ' ' && *c != '"' && *c != '\n')
                         {
                             variable_name.push(digit)
                         }
-                        last_str.push_str(&env::var(variable_name).unwrap());
+                        last_str.push_str(&env::var(variable_name)?);
                         continue;
                     }
                 }
