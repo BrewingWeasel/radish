@@ -14,7 +14,7 @@ use std::{
     process::{self, Child, Command, Stdio},
     str::from_utf8,
 };
-use tokenizer::CommandPart;
+use tokenizer::{CommandPart, TokenizedOutput};
 
 mod input_reader;
 mod tokenizer;
@@ -105,19 +105,22 @@ fn run_from_string(
 }
 
 fn generate_commands(
-    parsed_input: (Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>),
+    parsed_input: TokenizedOutput,
     env: &mut Env,
     output: bool,
 ) -> crossterm::Result<Option<Child>> {
-    if parsed_input.1.is_empty() {
-        return run_input(parsed_input.0, env, output);
+    if parsed_input.replacements.is_empty() {
+        return run_input(parsed_input.commands, env, output);
     }
     let mut last_command = None;
-    for replacement in parsed_input.1 {
-        let mut final_tokens = parsed_input.0.clone();
-        for (command_part_index, token_index, contents) in replacement {
-            if let CommandPart::Command(ref mut cmd) = final_tokens[command_part_index] {
-                cmd[token_index - 1] = contents + &cmd[token_index - 1];
+    for replacement in parsed_input.replacements {
+        let mut final_tokens = parsed_input.commands.clone();
+        for cur_replacement in replacement {
+            if let CommandPart::Command(ref mut cmd) =
+                final_tokens[cur_replacement.command_part_number]
+            {
+                cmd[cur_replacement.token_number - 1] =
+                    cur_replacement.replacement + &cmd[cur_replacement.token_number - 1];
             }
         }
         last_command = run_input(final_tokens, env, output)?;

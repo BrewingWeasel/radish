@@ -9,18 +9,27 @@ pub enum CommandPart {
     FromFile(String),
 }
 
+#[derive(Clone)]
+pub struct ReplacementInfo {
+    pub command_part_number: usize,
+    pub token_number: usize,
+    pub replacement: String,
+}
+
+pub struct TokenizedOutput {
+    pub commands: Vec<CommandPart>,
+    pub replacements: Vec<Vec<ReplacementInfo>>,
+}
+
 // TODO: Clean up
-pub fn parse_input(
-    input: &str,
-    env: &mut crate::Env,
-) -> Result<(Vec<CommandPart>, Vec<Vec<(usize, usize, String)>>), Box<dyn Error>> {
+pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
     let mut commands: Vec<CommandPart> = vec![CommandPart::Command(vec![String::from("")])];
     let mut chars = input.chars().peekable();
     let mut commandpart_index = 0;
     let mut current_token_index = 1;
-    let mut replacement: Vec<Vec<(usize, usize, String)>> = vec![vec![]];
+    let mut replacement: Vec<Vec<ReplacementInfo>> = vec![vec![]];
 
     loop {
         let c = chars.next();
@@ -134,11 +143,11 @@ pub fn parse_input(
                         for pattern in replacement {
                             for item in env.lists.get(&name).ok_or(crate::InvalidItemError)? {
                                 let mut replacement_pattern = pattern.clone();
-                                replacement_pattern.push((
-                                    commandpart_index,
-                                    current_token_index,
-                                    item.to_string(),
-                                ));
+                                replacement_pattern.push(ReplacementInfo {
+                                    command_part_number: commandpart_index,
+                                    token_number: current_token_index,
+                                    replacement: item.to_string(),
+                                });
                                 new_replacement.push(replacement_pattern);
                             }
                         }
@@ -153,12 +162,12 @@ pub fn parse_input(
                         let reference_index: usize = reference_index.parse().unwrap();
 
                         for old_replacement in replacement.iter_mut() {
-                            let original_str = old_replacement[reference_index].2.clone();
-                            old_replacement.push((
-                                commandpart_index,
-                                current_token_index,
-                                original_str,
-                            ))
+                            let original_str = old_replacement[reference_index].replacement.clone();
+                            old_replacement.push(ReplacementInfo {
+                                command_part_number: commandpart_index,
+                                token_number: current_token_index,
+                                replacement: original_str,
+                            });
                         }
                         continue;
                     }
@@ -202,5 +211,9 @@ pub fn parse_input(
             }
         }
     }
-    Ok((commands, replacement))
+    // Ok((commands, replacement))
+    Ok(TokenizedOutput {
+        commands,
+        replacements: replacement,
+    })
 }
