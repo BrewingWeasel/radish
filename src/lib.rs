@@ -150,8 +150,7 @@ fn run_input(
                                 OpenOptions::new()
                                     .append(true)
                                     .create(true)
-                                    .open(file_name)
-                                    .unwrap(),
+                                    .open(file_name)?,
                             )
                         } else {
                             Stdio::from(
@@ -159,8 +158,7 @@ fn run_input(
                                     .write(true)
                                     .create(true)
                                     .truncate(true)
-                                    .open(file_name)
-                                    .unwrap(),
+                                    .open(file_name)?,
                             )
                         }
                     }
@@ -184,8 +182,7 @@ fn run_input(
                             OpenOptions::new()
                                 .append(true)
                                 .create(true)
-                                .open(file_name)
-                                .unwrap(),
+                                .open(file_name)?,
                         )
                     } else {
                         Stdio::from(
@@ -193,12 +190,11 @@ fn run_input(
                                 .write(true)
                                 .create(true)
                                 .truncate(true)
-                                .open(file_name)
-                                .unwrap(),
+                                .open(file_name)?,
                         )
                     }
                 }
-                Stdio::from(File::open(file_name).unwrap())
+                Stdio::from(File::open(file_name)?)
             } else if let Some(output) = last_command {
                 Stdio::from(output.stdout.unwrap())
             } else {
