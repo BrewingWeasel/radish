@@ -117,7 +117,7 @@ fn generate_commands(
         let mut final_tokens = parsed_input.commands.clone();
         for cur_replacement in replacement {
             if let CommandPart::Command(ref mut cmd) =
-                final_tokens[cur_replacement.command_part_number]
+                final_tokens[cur_replacement.command_number][cur_replacement.command_part_number]
             {
                 cmd[cur_replacement.token_number - 1] =
                     cur_replacement.replacement + &cmd[cur_replacement.token_number - 1];
@@ -129,21 +129,57 @@ fn generate_commands(
 }
 
 fn run_input(
-    mut input: Vec<tokenizer::CommandPart>,
+    mut commands: Vec<Vec<tokenizer::CommandPart>>,
     env: &mut Env,
     output: bool,
 ) -> crossterm::Result<Option<Child>> {
     // let mut input = input.deref().iter().peekable();
-    let mut last_command: Option<Child> = None;
+    let mut last_command: Option<Child>;
+    let mut commands_iter = commands.iter_mut().peekable();
+    while let Some(input) = commands_iter.next() {
+        last_command = None;
+        for token_index in 0..input.len() {
+            if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
+                continue;
+            }
+            let mut stdout = match input.get(token_index + 1) {
+                Some(part) => match part {
+                    CommandPart::ToFile((file_name, append)) => {
+                        if *append {
+                            Stdio::from(
+                                OpenOptions::new()
+                                    .append(true)
+                                    .create(true)
+                                    .open(file_name)
+                                    .unwrap(),
+                            )
+                        } else {
+                            Stdio::from(
+                                OpenOptions::new()
+                                    .write(true)
+                                    .create(true)
+                                    .truncate(true)
+                                    .open(file_name)
+                                    .unwrap(),
+                            )
+                        }
+                    }
+                    CommandPart::FromFile(_) => Stdio::inherit(),
+                    _ => Stdio::piped(),
+                },
+                None => {
+                    if output {
+                        Stdio::inherit()
+                    } else {
+                        Stdio::piped()
+                    }
+                }
+            };
 
-    for token_index in 0..input.len() {
-        if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
-            continue;
-        }
-        let mut stdout = match input.get(token_index + 1) {
-            Some(part) => match part {
-                CommandPart::ToFile((file_name, append)) => {
-                    if *append {
+            let stdin = if let Some(CommandPart::FromFile(file_name)) = input.get(token_index + 1) {
+                // Do in a way so this is no longer necessary
+                if let Some(CommandPart::ToFile((file_name, append))) = input.get(token_index + 2) {
+                    stdout = if *append {
                         Stdio::from(
                             OpenOptions::new()
                                 .append(true)
@@ -162,61 +198,29 @@ fn run_input(
                         )
                     }
                 }
-                CommandPart::FromFile(_) => Stdio::inherit(),
-                _ => Stdio::piped(),
-            },
-            None => {
-                if output {
-                    Stdio::inherit()
-                } else {
-                    Stdio::piped()
-                }
+                Stdio::from(File::open(file_name).unwrap())
+            } else if let Some(output) = last_command {
+                Stdio::from(output.stdout.unwrap())
+            } else {
+                Stdio::inherit()
+            };
+
+            let tokens = match &mut input[token_index] {
+                CommandPart::Command(cmd) => cmd,
+                _ => unreachable!(),
+            };
+            let command = tokens.remove(0);
+
+            last_command = run(&command, tokens.to_vec(), stdout, stdin, env);
+        }
+        if let Some(mut cmd) = last_command {
+            cmd.wait()?;
+            if commands_iter.peek().is_none() {
+                return Ok(Some(cmd));
             }
-        };
-
-        let stdin = if let Some(CommandPart::FromFile(file_name)) = input.get(token_index + 1) {
-            // Do in a way so this is no longer necessary
-            if let Some(CommandPart::ToFile((file_name, append))) = input.get(token_index + 2) {
-                stdout = if *append {
-                    Stdio::from(
-                        OpenOptions::new()
-                            .append(true)
-                            .create(true)
-                            .open(file_name)
-                            .unwrap(),
-                    )
-                } else {
-                    Stdio::from(
-                        OpenOptions::new()
-                            .write(true)
-                            .create(true)
-                            .truncate(true)
-                            .open(file_name)
-                            .unwrap(),
-                    )
-                }
-            }
-            Stdio::from(File::open(file_name).unwrap())
-        } else if let Some(output) = last_command {
-            Stdio::from(output.stdout.unwrap())
-        } else {
-            Stdio::inherit()
-        };
-
-        let tokens = match &mut input[token_index] {
-            CommandPart::Command(cmd) => cmd,
-            _ => unreachable!(),
-        };
-        let command = tokens.remove(0);
-
-        last_command = run(&command, tokens.to_vec(), stdout, stdin, env);
+        }
     }
-    if let Some(mut cmd) = last_command {
-        cmd.wait()?;
-        Ok(Some(cmd))
-    } else {
-        Ok(None)
-    }
+    Ok(None)
 }
 
 fn run(

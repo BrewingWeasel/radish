@@ -2,7 +2,7 @@ use glob::glob;
 use std::{env, error::Error, io::Read};
 
 // TODO: come up with a better name
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CommandPart {
     Command(Vec<String>),
     ToFile((String, bool)),
@@ -11,13 +11,14 @@ pub enum CommandPart {
 
 #[derive(Clone)]
 pub struct ReplacementInfo {
+    pub command_number: usize,
     pub command_part_number: usize,
     pub token_number: usize,
     pub replacement: String,
 }
 
 pub struct TokenizedOutput {
-    pub commands: Vec<CommandPart>,
+    pub commands: Vec<Vec<CommandPart>>,
     pub replacements: Vec<Vec<ReplacementInfo>>,
 }
 
@@ -25,7 +26,8 @@ pub struct TokenizedOutput {
 pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
-    let mut commands: Vec<CommandPart> = vec![CommandPart::Command(vec![String::from("")])];
+    let mut commands: Vec<Vec<CommandPart>> =
+        vec![vec![CommandPart::Command(vec![String::from("")])]];
     let mut chars = input.chars().peekable();
     let mut commandpart_index = 0;
     let mut current_token_index = 1;
@@ -34,9 +36,10 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
     loop {
         let c = chars.next();
         if (c == Some(' ') || c.is_none()) && !in_quotes && in_glob_pattern {
-            if let CommandPart::Command(args) = commands.last().unwrap() {
+            if let CommandPart::Command(args) = commands.last().unwrap().last().unwrap() {
                 let glob_pattern = args.last().unwrap().clone();
-                if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
+                {
                     cmd.pop();
                     for entry in glob(&glob_pattern)?.flatten() {
                         cmd.push(entry.display().to_string())
@@ -49,7 +52,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
             break;
         }
         if let Some(i) = c {
-            let last_str = match commands.last_mut().unwrap() {
+            let last_str = match commands.last_mut().unwrap().last_mut().unwrap() {
                 CommandPart::Command(args) => args.last_mut().unwrap(),
                 CommandPart::ToFile((name, _)) => name,
                 CommandPart::FromFile(name) => name,
@@ -105,7 +108,10 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                             .unwrap(),
                     ),
                     '|' => {
-                        commands.push(CommandPart::Command(vec![String::from("")]));
+                        commands
+                            .last_mut()
+                            .unwrap()
+                            .push(CommandPart::Command(vec![String::from("")]));
                         chars.next(); // Hacky work around to not treat the space after a pipe as a
                                       // command
                         commandpart_index += 1;
@@ -117,7 +123,9 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         {
                             continue;
                         }
-                        if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                        if let CommandPart::Command(cmd) =
+                            commands.last_mut().unwrap().last_mut().unwrap()
+                        {
                             cmd.push(String::from(""));
                         }
                         current_token_index += 1;
@@ -144,6 +152,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                             for item in env.lists.get(&name).ok_or(crate::InvalidItemError)? {
                                 let mut replacement_pattern = pattern.clone();
                                 replacement_pattern.push(ReplacementInfo {
+                                    command_number: 0,
                                     command_part_number: commandpart_index,
                                     token_number: current_token_index,
                                     replacement: item.to_string(),
@@ -164,6 +173,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         for old_replacement in replacement.iter_mut() {
                             let original_str = old_replacement[reference_index].replacement.clone();
                             old_replacement.push(ReplacementInfo {
+                                command_number: commands.len(),
                                 command_part_number: commandpart_index,
                                 token_number: current_token_index,
                                 replacement: original_str,
@@ -172,9 +182,14 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         continue;
                     }
                     '>' => {
-                        commands.push(CommandPart::ToFile((String::new(), false)));
+                        commands
+                            .last_mut()
+                            .unwrap()
+                            .push(CommandPart::ToFile((String::new(), false)));
                         if chars.next() == Some('>') {
-                            if let CommandPart::ToFile(options) = commands.last_mut().unwrap() {
+                            if let CommandPart::ToFile(options) =
+                                commands.last_mut().unwrap().last_mut().unwrap()
+                            {
                                 options.1 = true;
                             }
                         }
@@ -182,14 +197,19 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         current_token_index = 1;
                     }
                     '<' => {
-                        commands.push(CommandPart::FromFile(String::new()));
+                        commands
+                            .last_mut()
+                            .unwrap()
+                            .push(CommandPart::FromFile(String::new()));
                         chars.next();
                         commandpart_index += 1;
                         current_token_index = 1;
                     }
                     '#' => {
                         if last_str == "" {
-                            if let CommandPart::Command(cmd) = commands.last_mut().unwrap() {
+                            if let CommandPart::Command(cmd) =
+                                commands.last_mut().unwrap().last_mut().unwrap()
+                            {
                                 cmd.pop();
                             }
                             break;
@@ -203,6 +223,10 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                                 .take_while(|x| *x != '\'')
                                 .collect::<String>(),
                         );
+                    }
+                    ';' => {
+                        commands.push(vec![CommandPart::Command(vec![String::from("")])]);
+                        chars.next();
                     }
                     _ => last_str.push(i),
                 }
