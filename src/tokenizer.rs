@@ -143,16 +143,36 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                     }
                     '%' => {
                         let mut name = String::new();
+                        let is_glob_list = if chars.peek() == Some(&'%') {
+                            chars.next();
+                            true
+                        } else {
+                            false
+                        };
                         while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n')
                         {
                             name.push(digit)
                         }
                         let mut new_replacement = vec![];
                         for pattern in replacement {
-                            for item in env.lists.get(&name).ok_or(crate::InvalidItemError)? {
+                            let list_with_replacements: Vec<String> = if is_glob_list {
+                                let mut paths: Vec<String> = vec![];
+                                for i in glob(&name)? {
+                                    paths.push(i?.display().to_string());
+                                }
+                                paths
+                                // .flat_map(|r| r.display().to_string())
+                                // .collect()
+                            } else {
+                                env.lists
+                                    .get(&name)
+                                    .ok_or(crate::InvalidItemError)?
+                                    .to_vec()
+                            };
+                            for item in list_with_replacements {
                                 let mut replacement_pattern = pattern.clone();
                                 replacement_pattern.push(ReplacementInfo {
-                                    command_number: 0,
+                                    command_number: commands.len() - 1,
                                     command_part_number: commandpart_index,
                                     token_number: current_token_index,
                                     replacement: item.to_string(),
@@ -173,7 +193,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         for old_replacement in replacement.iter_mut() {
                             let original_str = old_replacement[reference_index].replacement.clone();
                             old_replacement.push(ReplacementInfo {
-                                command_number: commands.len(),
+                                command_number: commands.len() - 1,
                                 command_part_number: commandpart_index,
                                 token_number: current_token_index,
                                 replacement: original_str,
@@ -206,7 +226,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         current_token_index = 1;
                     }
                     '#' => {
-                        if last_str == "" {
+                        if last_str.is_empty() {
                             if let CommandPart::Command(cmd) =
                                 commands.last_mut().unwrap().last_mut().unwrap()
                             {

@@ -302,10 +302,7 @@ fn mkloc(locs: &mut HashMap<String, String>, args: Vec<String>) {
 
 fn export(args: &str) {
     let mut args = args.split('=');
-    env::set_var(
-        args.next().unwrap().to_string(),
-        args.next().unwrap().to_string(),
-    );
+    env::set_var(args.next().unwrap(), args.next().unwrap());
 }
 fn alias(aliases: &mut HashMap<String, String>, args: &str) {
     let mut args = args.split('=');
