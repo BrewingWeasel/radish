@@ -40,6 +40,7 @@ pub struct Env {
     lists: HashMap<String, Vec<String>>,
     locations: HashMap<String, String>,
     aliases: HashMap<String, String>,
+    shell_variables: HashMap<String, String>,
 }
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     for line in BufReader::new(File::open(path)?).lines() {
@@ -59,7 +60,10 @@ pub fn run_radish() {
         lists: HashMap::new(),
         locations: HashMap::new(),
         aliases: HashMap::new(),
+        shell_variables: HashMap::new(),
     };
+    env.shell_variables
+        .insert(String::from("?"), String::from("0"));
     _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
@@ -210,7 +214,14 @@ fn run_input(
             last_command = run(&command, tokens.to_vec(), stdout, stdin, env);
         }
         if let Some(mut cmd) = last_command {
-            cmd.wait()?;
+            env.shell_variables.insert(
+                String::from("?"),
+                cmd.wait()?
+                    .to_string()
+                    .strip_prefix("exit status: ")
+                    .unwrap()
+                    .to_string(),
+            );
             if commands_iter.peek().is_none() {
                 return Ok(Some(cmd));
             }

@@ -83,7 +83,11 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         {
                             variable_name.push(digit)
                         }
-                        last_str.push_str(&env::var(variable_name)?);
+                        let val = match env.shell_variables.get(&variable_name) {
+                            Some(v) => v.to_string(),
+                            None => env::var(variable_name)?,
+                        };
+                        last_str.push_str(&val);
                         continue;
                     }
                 }
