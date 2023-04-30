@@ -139,7 +139,6 @@ fn run_input(
     env: &mut Env,
     output: bool,
 ) -> Result<Option<Child>, Box<dyn Error>> {
-    // let mut input = input.deref().iter().peekable();
     let mut last_command: Option<Child>;
     let mut commands_iter = commands.iter_mut().peekable();
     while let Some(input) = commands_iter.next() {
@@ -254,6 +253,10 @@ fn run(
             then_statement(env, args.first().unwrap())?;
             Ok(None)
         }
+        "else" => {
+            else_statement(env, args.first().unwrap())?;
+            Ok(None)
+        }
         "mklist" => {
             mklist(&mut env.lists, args);
             Ok(None)
@@ -315,6 +318,12 @@ fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Erro
 
 fn then_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
     if env.continue_if {
+        run_from_string(commands, env, true)?;
+    }
+    Ok(())
+}
+fn else_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
+    if !env.continue_if {
         run_from_string(commands, env, true)?;
     }
     Ok(())

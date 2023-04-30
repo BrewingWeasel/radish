@@ -58,45 +58,65 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                 CommandPart::FromFile(name) => name,
             };
             if last_str == "then" {
-                let mut contents = String::new();
+                let mut contents = vec![String::new()];
                 let mut last_cmd = String::new();
                 let mut block_in_quotes = false;
                 let mut block_in_single_quotes = false;
                 while let Some(c) = chars.next() {
+                    let last_contents = contents.last_mut().unwrap();
                     if block_in_single_quotes && c == '\'' {
                         block_in_single_quotes = false;
-                        contents.push('\'');
+                        last_contents.push('\'');
                         continue;
                     }
                     match c {
                         '\'' => block_in_single_quotes = true,
                         '\\' => {
-                            contents.push(chars.next().unwrap());
+                            last_contents.push(chars.next().unwrap());
                         }
                         '"' => block_in_quotes = !block_in_quotes,
                         ';' | '\n' => last_cmd = String::new(),
                         _ => (),
                     };
-                    contents.push(c);
-                    if !c.is_whitespace() && c != ';' && last_cmd.len() < 2 {
+                    last_contents.push(c);
+                    if !c.is_whitespace() && c != ';' && last_cmd.len() < 4 {
                         last_cmd.push(c);
                     }
                     if !block_in_single_quotes && !block_in_quotes {
-                        if last_cmd == "fi" {
-                            contents = contents
-                                .strip_suffix("fi")
-                                .unwrap()
-                                .trim_end()
-                                .strip_suffix(";")
-                                .unwrap()
-                                .to_string();
-                            break;
-                        };
+                        match last_cmd.as_str() {
+                            "fi" => {
+                                *last_contents = last_contents
+                                    .strip_suffix("fi")
+                                    .unwrap()
+                                    .trim_end()
+                                    .strip_suffix(";")
+                                    .unwrap()
+                                    .to_string();
+                                break;
+                            }
+                            "else" => {
+                                *last_contents = last_contents
+                                    .strip_suffix("else")
+                                    .unwrap()
+                                    .trim_end()
+                                    .strip_suffix(";")
+                                    .unwrap()
+                                    .to_string();
+                                last_cmd = String::new();
+                                contents.push(String::from("else"));
+                            }
+                            _ => (),
+                        }
                     }
                 }
                 if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
                 {
-                    cmd.push(contents);
+                    cmd.push(contents.first().unwrap().to_string());
+                }
+                for branch in contents[1..].into_iter() {
+                    commands.last_mut().unwrap().push(CommandPart::Command(
+                        branch.splitn(2, " ").map(|x| x.to_string()).collect(),
+                    ));
                 }
                 continue;
             }
