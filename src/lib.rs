@@ -249,6 +249,10 @@ fn run(
             if_statement(env, args)?;
             Ok(None)
         }
+        "elif" => {
+            elif_statement(env, args)?;
+            Ok(None)
+        }
         "then" => {
             then_statement(env, args.first().unwrap())?;
             Ok(None)
@@ -312,6 +316,17 @@ fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Erro
     let cmd = args.remove(0);
     if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
         env.continue_if = child.wait()?.success();
+    }
+    Ok(())
+}
+fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let cmd = args.remove(0);
+    if env.continue_if {
+        env.continue_if = false;
+    } else {
+        if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
+            env.continue_if = child.wait()?.success();
+        }
     }
     Ok(())
 }

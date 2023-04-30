@@ -94,6 +94,17 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                                     .to_string();
                                 break;
                             }
+                            "elif" => {
+                                *last_contents = last_contents
+                                    .strip_suffix("elif")
+                                    .unwrap()
+                                    .trim_end()
+                                    .strip_suffix(";")
+                                    .unwrap()
+                                    .to_string();
+                                contents.push(String::from("elif"));
+                                break;
+                            }
                             "else" => {
                                 *last_contents = last_contents
                                     .strip_suffix("else")
