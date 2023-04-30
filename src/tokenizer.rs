@@ -57,6 +57,49 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                 CommandPart::ToFile((name, _)) => name,
                 CommandPart::FromFile(name) => name,
             };
+            if last_str == "then" {
+                let mut contents = String::new();
+                let mut last_cmd = String::new();
+                let mut block_in_quotes = false;
+                let mut block_in_single_quotes = false;
+                while let Some(c) = chars.next() {
+                    if block_in_single_quotes && c == '\'' {
+                        block_in_single_quotes = false;
+                        contents.push('\'');
+                        continue;
+                    }
+                    match c {
+                        '\'' => block_in_single_quotes = true,
+                        '\\' => {
+                            contents.push(chars.next().unwrap());
+                        }
+                        '"' => block_in_quotes = !block_in_quotes,
+                        ';' | '\n' => last_cmd = String::new(),
+                        _ => (),
+                    };
+                    contents.push(c);
+                    if !c.is_whitespace() && c != ';' && last_cmd.len() < 2 {
+                        last_cmd.push(c);
+                    }
+                    if !block_in_single_quotes && !block_in_quotes {
+                        if last_cmd == "fi" {
+                            contents = contents
+                                .strip_suffix("fi")
+                                .unwrap()
+                                .trim_end()
+                                .strip_suffix(";")
+                                .unwrap()
+                                .to_string();
+                            break;
+                        };
+                    }
+                }
+                if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
+                {
+                    cmd.push(contents);
+                }
+                continue;
+            }
             match i {
                 '"' => {
                     in_quotes = !in_quotes;
@@ -165,8 +208,6 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                                     paths.push(i?.display().to_string());
                                 }
                                 paths
-                                // .flat_map(|r| r.display().to_string())
-                                // .collect()
                             } else {
                                 env.lists
                                     .get(&name)
@@ -249,8 +290,10 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                         );
                     }
                     ';' => {
-                        commands.push(vec![CommandPart::Command(vec![String::from("")])]);
-                        chars.next();
+                        if chars.peek().is_some() {
+                            commands.push(vec![CommandPart::Command(vec![String::from("")])]);
+                            chars.next();
+                        }
                     }
                     _ => last_str.push(i),
                 }

@@ -41,6 +41,7 @@ pub struct Env {
     locations: HashMap<String, String>,
     aliases: HashMap<String, String>,
     shell_variables: HashMap<String, String>,
+    continue_if: bool,
 }
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     for line in BufReader::new(File::open(path)?).lines() {
@@ -61,6 +62,7 @@ pub fn run_radish() {
         locations: HashMap::new(),
         aliases: HashMap::new(),
         shell_variables: HashMap::new(),
+        continue_if: false,
     };
     env.shell_variables
         .insert(String::from("?"), String::from("0"));
@@ -112,7 +114,7 @@ fn generate_commands(
     parsed_input: TokenizedOutput,
     env: &mut Env,
     output: bool,
-) -> crossterm::Result<Option<Child>> {
+) -> Result<Option<Child>, Box<dyn Error>> {
     if parsed_input.replacements.is_empty() {
         return run_input(parsed_input.commands, env, output);
     }
@@ -133,10 +135,10 @@ fn generate_commands(
 }
 
 fn run_input(
-    mut commands: Vec<Vec<tokenizer::CommandPart>>,
+    mut commands: Vec<Vec<CommandPart>>,
     env: &mut Env,
     output: bool,
-) -> crossterm::Result<Option<Child>> {
+) -> Result<Option<Child>, Box<dyn Error>> {
     // let mut input = input.deref().iter().peekable();
     let mut last_command: Option<Child>;
     let mut commands_iter = commands.iter_mut().peekable();
@@ -211,7 +213,7 @@ fn run_input(
             };
             let command = tokens.remove(0);
 
-            last_command = run(&command, tokens.to_vec(), stdout, stdin, env);
+            last_command = run(&command, tokens.to_vec(), stdout, stdin, env)?;
         }
         if let Some(mut cmd) = last_command {
             env.shell_variables.insert(
@@ -236,29 +238,37 @@ fn run(
     stdout: Stdio,
     stdin: Stdio,
     env: &mut Env,
-) -> Option<Child> {
+) -> Result<Option<Child>, Box<dyn Error>> {
     // TODO: probably make there be a
     // struct for this
     match command {
         "cd" => {
             cd(args);
-            None
+            Ok(None)
+        }
+        "if" => {
+            if_statement(env, args)?;
+            Ok(None)
+        }
+        "then" => {
+            then_statement(env, args.first().unwrap())?;
+            Ok(None)
         }
         "mklist" => {
             mklist(&mut env.lists, args);
-            None
+            Ok(None)
         }
         "alias" => {
             alias(&mut env.aliases, args.first().unwrap());
-            None
+            Ok(None)
         }
         "export" => {
             export(args.first().unwrap());
-            None
+            Ok(None)
         }
         "mkloc" => {
             mkloc(&mut env.locations, args);
-            None
+            Ok(None)
         }
         "exit" => process::exit(0),
         command => {
@@ -268,10 +278,10 @@ fn run(
                 .stdout(stdout)
                 .spawn()
             {
-                Ok(output) => Some(output),
+                Ok(output) => Ok(Some(output)),
                 Err(e) => {
                     println!("Error running {command}: {e}");
-                    None
+                    Ok(None)
                 }
             }
         }
@@ -293,6 +303,21 @@ fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
     } else {
         execute!(stdout(), Print("No list name provided")).unwrap();
     }
+}
+
+fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let cmd = args.remove(0);
+    if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
+        env.continue_if = child.wait()?.success();
+    }
+    Ok(())
+}
+
+fn then_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
+    if env.continue_if {
+        run_from_string(commands, env, true)?;
+    }
+    Ok(())
 }
 
 fn mkloc(locs: &mut HashMap<String, String>, args: Vec<String>) {
