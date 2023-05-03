@@ -313,7 +313,17 @@ fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
 }
 
 fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
-    let cmd = args.remove(0);
+    let cmd = match args.remove(0).as_str() {
+        "[" => {
+            if args.last().unwrap() == "]" {
+                args.pop();
+            } else {
+                return Err("No matching ] found".into());
+            }
+            "test".to_string()
+        }
+        cmd => cmd.to_string(),
+    };
     if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
         env.continue_if = child.wait()?.success();
     }
