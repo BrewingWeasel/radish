@@ -71,6 +71,7 @@ pub fn parse_input(
             let mut last_cmd = String::new();
             let mut block_in_quotes = false;
             let mut block_in_single_quotes = false;
+            let mut add_semicolon = false;
             loop {
                 if chars.peek().is_none() {
                     let next_line = match extra_lines {
@@ -81,15 +82,27 @@ pub fn parse_input(
                             return Err("Expected more input".into());
                         }
                     };
+                    if add_semicolon {
+                        contents.last_mut().unwrap().push(';');
+                    } else {
+                        contents.last_mut().unwrap().push(' ');
+                    }
+                    last_cmd = String::new();
                     chars = OwnedChars::from_string(next_line).peekable();
+                    loop {
+                        if chars.next_if(|c| c.is_whitespace()).is_none() {
+                            break;
+                        }
+                    }
                 }
+                let last_contents = contents.last_mut().unwrap();
+                add_semicolon = true;
                 let c = match chars.next() {
                     Some(c) => c,
                     None => {
                         break;
                     }
                 };
-                let last_contents = contents.last_mut().unwrap();
                 if block_in_single_quotes && c == '\'' {
                     block_in_single_quotes = false;
                     last_contents.push('\'');
@@ -101,7 +114,9 @@ pub fn parse_input(
                         last_contents.push(chars.next().unwrap());
                     }
                     '"' => block_in_quotes = !block_in_quotes,
-                    ';' | '\n' => last_cmd = String::new(),
+                    ';' | '\n' => {
+                        last_cmd = String::new();
+                    }
                     _ => (),
                 };
                 last_contents.push(c);
@@ -141,6 +156,7 @@ pub fn parse_input(
                                 .to_string();
                             last_cmd = String::new();
                             contents.push(String::from("else"));
+                            add_semicolon = false;
                         }
                         _ => (),
                     }
@@ -352,7 +368,9 @@ pub fn parse_input(
                     ';' => {
                         if chars.peek().is_some() {
                             commands.push(vec![CommandPart::Command(vec![String::from("")])]);
-                            chars.next();
+                            if chars.peek().unwrap().is_whitespace() {
+                                chars.next();
+                            }
                         }
                     }
                     _ => last_str.push(i),
