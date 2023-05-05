@@ -1,5 +1,11 @@
 use glob::glob;
-use std::{env, error::Error, io::Read};
+use owned_chars::OwnedChars;
+use std::{
+    env,
+    error::Error,
+    fs::File,
+    io::{BufReader, Lines, Read},
+};
 
 // TODO: come up with a better name
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -9,7 +15,7 @@ pub enum CommandPart {
     FromFile(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ReplacementInfo {
     pub command_number: usize,
     pub command_part_number: usize,
@@ -17,18 +23,25 @@ pub struct ReplacementInfo {
     pub replacement: String,
 }
 
+#[derive(Debug)]
 pub struct TokenizedOutput {
     pub commands: Vec<Vec<CommandPart>>,
     pub replacements: Vec<Vec<ReplacementInfo>>,
 }
 
 // TODO: Clean up
-pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput, Box<dyn Error>> {
+pub fn parse_input(
+    input: &str,
+    env: &mut crate::Env,
+    mut extra_lines: Option<&mut Lines<BufReader<File>>>,
+    // extra_lines: &mut impl Iterator<Item = String>,
+    // },
+) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
     let mut commands: Vec<Vec<CommandPart>> =
         vec![vec![CommandPart::Command(vec![String::from("")])]];
-    let mut chars = input.chars().peekable();
+    let mut chars = OwnedChars::from_string(input.trim_start().to_owned()).peekable();
     let mut commandpart_index = 0;
     let mut current_token_index = 1;
     let mut replacement: Vec<Vec<ReplacementInfo>> = vec![vec![]];
@@ -48,89 +61,105 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
             }
             in_glob_pattern = false;
         }
+        let last_str = match commands.last_mut().unwrap().last_mut().unwrap() {
+            CommandPart::Command(args) => args.last_mut().unwrap(),
+            CommandPart::ToFile((name, _)) => name,
+            CommandPart::FromFile(name) => name,
+        };
+        if last_str == "then" {
+            let mut contents = vec![String::new()];
+            let mut last_cmd = String::new();
+            let mut block_in_quotes = false;
+            let mut block_in_single_quotes = false;
+            loop {
+                if chars.peek().is_none() {
+                    let next_line = match extra_lines {
+                        Some(ref mut lines) => {
+                            lines.next().ok_or("Expected another line")?.unwrap()
+                        }
+                        None => {
+                            return Err("Expected more input".into());
+                        }
+                    };
+                    chars = OwnedChars::from_string(next_line).peekable();
+                }
+                let c = match chars.next() {
+                    Some(c) => c,
+                    None => {
+                        break;
+                    }
+                };
+                let last_contents = contents.last_mut().unwrap();
+                if block_in_single_quotes && c == '\'' {
+                    block_in_single_quotes = false;
+                    last_contents.push('\'');
+                    continue;
+                }
+                match c {
+                    '\'' => block_in_single_quotes = true,
+                    '\\' => {
+                        last_contents.push(chars.next().unwrap());
+                    }
+                    '"' => block_in_quotes = !block_in_quotes,
+                    ';' | '\n' => last_cmd = String::new(),
+                    _ => (),
+                };
+                last_contents.push(c);
+                if !c.is_whitespace() && c != ';' && last_cmd.len() < 4 {
+                    last_cmd.push(c);
+                }
+                if !block_in_single_quotes && !block_in_quotes {
+                    match last_cmd.as_str() {
+                        "fi" => {
+                            *last_contents = last_contents
+                                .strip_suffix("fi")
+                                .unwrap()
+                                .trim_end()
+                                .strip_suffix(";")
+                                .unwrap()
+                                .to_string();
+                            break;
+                        }
+                        "elif" => {
+                            *last_contents = last_contents
+                                .strip_suffix("elif")
+                                .unwrap()
+                                .trim_end()
+                                .strip_suffix(";")
+                                .unwrap()
+                                .to_string();
+                            contents.push(String::from("elif"));
+                            break;
+                        }
+                        "else" => {
+                            *last_contents = last_contents
+                                .strip_suffix("else")
+                                .unwrap()
+                                .trim_end()
+                                .strip_suffix(";")
+                                .unwrap()
+                                .to_string();
+                            last_cmd = String::new();
+                            contents.push(String::from("else"));
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap() {
+                cmd.push(contents.first().unwrap().to_string());
+            }
+            for branch in contents[1..].into_iter() {
+                commands.last_mut().unwrap().push(CommandPart::Command(
+                    branch.splitn(2, " ").map(|x| x.to_string()).collect(),
+                ));
+            }
+            continue;
+        }
         if c.is_none() {
             break;
         }
         if let Some(i) = c {
-            let last_str = match commands.last_mut().unwrap().last_mut().unwrap() {
-                CommandPart::Command(args) => args.last_mut().unwrap(),
-                CommandPart::ToFile((name, _)) => name,
-                CommandPart::FromFile(name) => name,
-            };
-            if last_str == "then" {
-                let mut contents = vec![String::new()];
-                let mut last_cmd = String::new();
-                let mut block_in_quotes = false;
-                let mut block_in_single_quotes = false;
-                while let Some(c) = chars.next() {
-                    let last_contents = contents.last_mut().unwrap();
-                    if block_in_single_quotes && c == '\'' {
-                        block_in_single_quotes = false;
-                        last_contents.push('\'');
-                        continue;
-                    }
-                    match c {
-                        '\'' => block_in_single_quotes = true,
-                        '\\' => {
-                            last_contents.push(chars.next().unwrap());
-                        }
-                        '"' => block_in_quotes = !block_in_quotes,
-                        ';' | '\n' => last_cmd = String::new(),
-                        _ => (),
-                    };
-                    last_contents.push(c);
-                    if !c.is_whitespace() && c != ';' && last_cmd.len() < 4 {
-                        last_cmd.push(c);
-                    }
-                    if !block_in_single_quotes && !block_in_quotes {
-                        match last_cmd.as_str() {
-                            "fi" => {
-                                *last_contents = last_contents
-                                    .strip_suffix("fi")
-                                    .unwrap()
-                                    .trim_end()
-                                    .strip_suffix(";")
-                                    .unwrap()
-                                    .to_string();
-                                break;
-                            }
-                            "elif" => {
-                                *last_contents = last_contents
-                                    .strip_suffix("elif")
-                                    .unwrap()
-                                    .trim_end()
-                                    .strip_suffix(";")
-                                    .unwrap()
-                                    .to_string();
-                                contents.push(String::from("elif"));
-                                break;
-                            }
-                            "else" => {
-                                *last_contents = last_contents
-                                    .strip_suffix("else")
-                                    .unwrap()
-                                    .trim_end()
-                                    .strip_suffix(";")
-                                    .unwrap()
-                                    .to_string();
-                                last_cmd = String::new();
-                                contents.push(String::from("else"));
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
-                {
-                    cmd.push(contents.first().unwrap().to_string());
-                }
-                for branch in contents[1..].into_iter() {
-                    commands.last_mut().unwrap().push(CommandPart::Command(
-                        branch.splitn(2, " ").map(|x| x.to_string()).collect(),
-                    ));
-                }
-                continue;
-            }
             match i {
                 '"' => {
                     in_quotes = !in_quotes;
@@ -140,7 +169,7 @@ pub fn parse_input(input: &str, env: &mut crate::Env) -> Result<TokenizedOutput,
                     if let Some(&'(') = chars.peek() {
                         chars.next();
                         let new_cmd = &chars.by_ref().take_while(|x| *x != ')').collect::<String>();
-                        let mut output = crate::run_from_string(new_cmd, env, false)?
+                        let mut output = crate::run_from_string(new_cmd, env, false, None)?
                             .ok_or("running command failed")?
                             .stdout
                             .ok_or("No stdout from command")?;

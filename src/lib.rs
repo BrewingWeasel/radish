@@ -9,7 +9,7 @@ use std::{
     env,
     error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stdout, BufRead, BufReader, Write},
+    io::{stdout, BufRead, BufReader, Lines, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
     str::from_utf8,
@@ -44,8 +44,9 @@ pub struct Env {
     continue_if: bool,
 }
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
-    for line in BufReader::new(File::open(path)?).lines() {
-        run_from_string(&line.unwrap(), env, true)?;
+    let mut lines = BufReader::new(File::open(path)?).lines();
+    while let Some(line) = lines.next() {
+        run_from_string(&line.unwrap(), env, true, Some(&mut lines))?;
     }
     Ok(())
 }
@@ -84,7 +85,7 @@ pub fn run_radish() {
         if input.is_empty() {
             continue;
         }
-        if let Err(e) = run_from_string(&input, &mut env, true) {
+        if let Err(e) = run_from_string(&input, &mut env, true, None) {
             eprintln!("{}", e);
         }
         history.push(input);
@@ -95,6 +96,7 @@ fn run_from_string(
     input: &String,
     env: &mut Env,
     output: bool,
+    extra_lines: Option<&mut Lines<BufReader<File>>>,
 ) -> Result<Option<Child>, Box<dyn Error>> {
     if input.is_empty() || input.starts_with('#') {
         return Ok(None);
@@ -106,7 +108,7 @@ fn run_from_string(
             new_input = new_input.replacen(alias, env.aliases.get(alias).unwrap(), 1);
         }
     }
-    let parsed_input = tokenizer::parse_input(&new_input, env)?;
+    let parsed_input = tokenizer::parse_input(&new_input, env, extra_lines)?;
     Ok(generate_commands(parsed_input, env, output)?)
 }
 
@@ -343,13 +345,13 @@ fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Er
 
 fn then_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
     if env.continue_if {
-        run_from_string(commands, env, true)?;
+        run_from_string(commands, env, true, None)?;
     }
     Ok(())
 }
 fn else_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
     if !env.continue_if {
-        run_from_string(commands, env, true)?;
+        run_from_string(commands, env, true, None)?;
     }
     Ok(())
 }
