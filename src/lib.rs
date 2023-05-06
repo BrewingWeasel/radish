@@ -146,6 +146,19 @@ fn run_input(
     while let Some(input) = commands_iter.next() {
         last_command = None;
         for token_index in 0..input.len() {
+            match input.get(token_index).unwrap() {
+                CommandPart::Command(_) => (),
+                CommandPart::Or => {
+                    if last_command.unwrap().wait()?.to_string() == "exit status: 0" {
+                        last_command = None;
+                        break;
+                    } else {
+                        last_command = None;
+                        continue;
+                    }
+                }
+                _ => continue,
+            }
             if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
                 continue;
             }
@@ -169,7 +182,7 @@ fn run_input(
                             )
                         }
                     }
-                    CommandPart::FromFile(_) => Stdio::inherit(),
+                    CommandPart::FromFile(_) | CommandPart::Or => Stdio::inherit(),
                     _ => Stdio::piped(),
                 },
                 None => {

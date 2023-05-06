@@ -13,6 +13,7 @@ pub enum CommandPart {
     Command(Vec<String>),
     ToFile((String, bool)),
     FromFile(String),
+    Or,
 }
 
 #[derive(Clone, Debug)]
@@ -34,8 +35,6 @@ pub fn parse_input(
     input: &str,
     env: &mut crate::Env,
     mut extra_lines: Option<&mut Lines<BufReader<File>>>,
-    // extra_lines: &mut impl Iterator<Item = String>,
-    // },
 ) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
     let mut in_glob_pattern = false;
@@ -65,6 +64,7 @@ pub fn parse_input(
             CommandPart::Command(args) => args.last_mut().unwrap(),
             CommandPart::ToFile((name, _)) => name,
             CommandPart::FromFile(name) => name,
+            _ => unreachable!(),
         };
         if last_str == "then" {
             let mut contents = vec![String::new()];
@@ -231,6 +231,10 @@ pub fn parse_input(
                             .unwrap(),
                     ),
                     '|' => {
+                        if chars.peek() == Some(&'|') {
+                            commands.last_mut().unwrap().push(CommandPart::Or);
+                            chars.next();
+                        }
                         commands
                             .last_mut()
                             .unwrap()
