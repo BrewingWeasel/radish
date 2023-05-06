@@ -5,16 +5,18 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::Clear,
 };
-use std::{borrow::Cow, cmp::Ordering, fs::read_dir, io::stdout, process};
+use std::{borrow::Cow, cmp::Ordering, fs::read_dir, io::stdout};
 
-pub fn get_input(history: &mut Vec<String>, env: &crate::Env) -> String {
+use crate::exit;
+
+pub fn get_input(env: &mut crate::Env) -> String {
     #[derive(Debug)]
     enum CompletionType {
         Command,
         List,
         File,
     }
-    let mut history_index = history.len();
+    let mut history_index = env.history.len();
     let mut input = String::new();
     let mut in_quotes = false;
     let mut after_slash = false;
@@ -100,7 +102,7 @@ pub fn get_input(history: &mut Vec<String>, env: &crate::Env) -> String {
                         input.replace_range(input.len() - completing_values.0.len().., completion);
                     }
                 }
-                KeyCode::Esc => process::exit(0),
+                KeyCode::Esc => exit(env),
                 KeyCode::Enter => {
                     execute!(stdout(), Print('\n'), MoveToColumn(0)).unwrap();
                     break;
@@ -117,7 +119,7 @@ pub fn get_input(history: &mut Vec<String>, env: &crate::Env) -> String {
                         continue;
                     }
                     history_index -= 1;
-                    let new_input = history.get(history_index);
+                    let new_input = env.history.get(history_index);
                     if let Some(inp) = new_input {
                         execute!(
                             stdout(),
@@ -133,7 +135,7 @@ pub fn get_input(history: &mut Vec<String>, env: &crate::Env) -> String {
                 }
                 KeyCode::Down => {
                     history_index += 1;
-                    let new_input = history.get(history_index);
+                    let new_input = env.history.get(history_index);
                     if let Some(inp) = new_input {
                         execute!(
                             stdout(),

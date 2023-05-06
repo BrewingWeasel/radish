@@ -35,7 +35,7 @@ impl std::fmt::Display for InvalidItemError {
 }
 
 pub struct Env {
-    // More in the future
+    history: Vec<String>,
     commands: Vec<String>,
     prompt_length: u16,
     lists: HashMap<String, Vec<String>>,
@@ -53,11 +53,18 @@ fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run_radish() {
-    let mut history: Vec<String> = vec![];
+    let mut history = vec![];
+    if let Ok(file) = File::open(dirs::home_dir().unwrap().join(".radish_history")) {
+        let mut lines = BufReader::new(file).lines();
+        while let Some(line) = lines.next() {
+            history.push(line.unwrap());
+        }
+    }
     let mut commands = get_all_commands();
     commands.sort_unstable();
     commands.dedup(); // Hacky workaround for when there are multiple of the same file name in path
     let mut env = Env {
+        history,
         commands,
         prompt_length: 3,
         lists: HashMap::new(),
@@ -81,7 +88,7 @@ pub fn run_radish() {
         print!("{}", prompt);
         stdout().flush().unwrap();
         enable_raw_mode().unwrap();
-        let input = input_reader::get_input(&mut history, &env);
+        let input = input_reader::get_input(&mut env);
         disable_raw_mode().unwrap();
         if input.is_empty() {
             continue;
@@ -89,7 +96,7 @@ pub fn run_radish() {
         if let Err(e) = run_from_string(Cow::Borrowed(&input), &mut env, true, None) {
             eprintln!("{}", e);
         }
-        history.push(input);
+        env.history.push(input);
     }
 }
 
@@ -298,7 +305,10 @@ fn run(
             mkloc(&mut env.locations, args);
             Ok(None)
         }
-        "exit" => process::exit(0),
+        "exit" => {
+            exit(env);
+            unreachable!()
+        }
         command => {
             match Command::new(command)
                 .args(args)
@@ -314,6 +324,19 @@ fn run(
             }
         }
     }
+}
+
+pub fn exit(env: &mut Env) {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(dirs::home_dir().unwrap().join(".radish_history"))
+        .unwrap();
+    for i in &env.history {
+        file.write(format!("{i}\n").as_bytes())
+            .expect("Error writing to history on exit");
+    }
+    process::exit(0);
 }
 
 fn cd(args: Vec<String>) {
