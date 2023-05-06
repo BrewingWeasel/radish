@@ -131,7 +131,7 @@ pub fn parse_input(
                                 .strip_suffix("fi")
                                 .unwrap()
                                 .trim_end()
-                                .strip_suffix(";")
+                                .strip_suffix(';')
                                 .unwrap()
                                 .to_string();
                             break;
@@ -141,7 +141,7 @@ pub fn parse_input(
                                 .strip_suffix("elif")
                                 .unwrap()
                                 .trim_end()
-                                .strip_suffix(";")
+                                .strip_suffix(';')
                                 .unwrap()
                                 .to_string();
                             contents.push(String::from("elif"));
@@ -152,7 +152,7 @@ pub fn parse_input(
                                 .strip_suffix("else")
                                 .unwrap()
                                 .trim_end()
-                                .strip_suffix(";")
+                                .strip_suffix(';')
                                 .unwrap()
                                 .to_string();
                             last_cmd = String::new();
@@ -166,9 +166,9 @@ pub fn parse_input(
             if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap() {
                 cmd.push(contents.first().unwrap().to_string());
             }
-            for branch in contents[1..].into_iter() {
+            for branch in contents[1..].iter() {
                 commands.last_mut().unwrap().push(CommandPart::Command(
-                    branch.splitn(2, " ").map(|x| x.to_string()).collect(),
+                    branch.splitn(2, ' ').map(|x| x.to_string()).collect(),
                 ));
             }
             continue;

@@ -109,7 +109,7 @@ fn run_from_string(
         }
     }
     let parsed_input = tokenizer::parse_input(&new_input, env, extra_lines)?;
-    Ok(generate_commands(parsed_input, env, output)?)
+    generate_commands(parsed_input, env, output)
 }
 
 fn generate_commands(
@@ -359,10 +359,8 @@ fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Er
     let cmd = args.remove(0);
     if env.continue_if {
         env.continue_if = false;
-    } else {
-        if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
-            env.continue_if = child.wait()?.success();
-        }
+    } else if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
+        env.continue_if = child.wait()?.success();
     }
     Ok(())
 }
