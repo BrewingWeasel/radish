@@ -118,7 +118,7 @@ fn generate_commands(
     env: &mut Env,
     output: bool,
 ) -> Result<Option<Child>, Box<dyn Error>> {
-    if parsed_input.replacements.is_empty() {
+    if parsed_input.replacements.first().unwrap().is_empty() {
         return run_input(parsed_input.commands, env, output);
     }
     let mut last_command = None;
