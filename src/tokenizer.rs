@@ -5,6 +5,7 @@ use std::{
     error::Error,
     fs::File,
     io::{BufReader, Lines, Read},
+    iter::Peekable,
 };
 
 // TODO: come up with a better name
@@ -234,14 +235,14 @@ pub fn parse_input(
                     '|' => {
                         if chars.peek() == Some(&'|') {
                             commands.last_mut().unwrap().push(CommandPart::Or);
+                            logical_operators(&mut chars, &mut commands)?;
+                        } else {
+                            commands
+                                .last_mut()
+                                .unwrap()
+                                .push(CommandPart::Command(vec![String::from("")]));
                             chars.next();
                         }
-                        commands
-                            .last_mut()
-                            .unwrap()
-                            .push(CommandPart::Command(vec![String::from("")]));
-                        chars.next(); // Hacky work around to not treat the space after a pipe as a
-                                      // command
                         commandpart_index += 1;
                         current_token_index = 1;
                     }
@@ -319,12 +320,7 @@ pub fn parse_input(
                     '&' => {
                         if chars.peek() == Some(&'&') {
                             commands.last_mut().unwrap().push(CommandPart::And);
-                            chars.next();
-                            commands
-                                .last_mut()
-                                .unwrap()
-                                .push(CommandPart::Command(vec![String::from("")]));
-                            chars.next();
+                            logical_operators(&mut chars, &mut commands)?;
                             commandpart_index += 1;
                             current_token_index = 1;
                             continue;
@@ -409,4 +405,27 @@ pub fn parse_input(
         commands,
         replacements: replacement,
     })
+}
+
+fn logical_operators(
+    chars: &mut Peekable<OwnedChars>,
+    commands: &mut Vec<Vec<CommandPart>>,
+) -> Result<(), Box<dyn Error>> {
+    chars.next();
+    let first_cmd = if let CommandPart::Command(args) = commands.last().unwrap().first().unwrap() {
+        args.first().unwrap()
+    } else {
+        return Err("&& or || was used on file".into());
+    };
+    let new_cmd = if ["if", "elif"].contains(&first_cmd.as_str()) {
+        vec![first_cmd.into(), String::new()]
+    } else {
+        vec![String::new()]
+    };
+    commands
+        .last_mut()
+        .unwrap()
+        .push(CommandPart::Command(new_cmd));
+    chars.next();
+    Ok(())
 }

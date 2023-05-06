@@ -271,14 +271,8 @@ fn run(
             cd(args);
             Ok(None)
         }
-        "if" => {
-            if_statement(env, args)?;
-            Ok(None)
-        }
-        "elif" => {
-            elif_statement(env, args)?;
-            Ok(None)
-        }
+        "if" => Ok(if_statement(env, args)?),
+        "elif" => Ok(elif_statement(env, args)?),
         "then" => {
             then_statement(env, args.first().unwrap())?;
             Ok(None)
@@ -338,7 +332,7 @@ fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
     }
 }
 
-fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<Option<Child>, Box<dyn Error>> {
     let cmd = match args.remove(0).as_str() {
         "[" => {
             if args.last().unwrap() == "]" {
@@ -352,17 +346,20 @@ fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Erro
     };
     if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
         env.continue_if = child.wait()?.success();
+        Ok(Some(child))
+    } else {
+        Ok(None)
     }
-    Ok(())
 }
-fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
+fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<Option<Child>, Box<dyn Error>> {
     let cmd = args.remove(0);
     if env.continue_if {
         env.continue_if = false;
     } else if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
         env.continue_if = child.wait()?.success();
+        return Ok(Some(child));
     }
-    Ok(())
+    Ok(None)
 }
 
 fn then_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
