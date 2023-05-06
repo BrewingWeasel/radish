@@ -1,6 +1,7 @@
 use glob::glob;
 use owned_chars::OwnedChars;
 use std::{
+    borrow::Cow,
     env,
     error::Error,
     fs::File,
@@ -187,10 +188,11 @@ pub fn parse_input(
                     if let Some(&'(') = chars.peek() {
                         chars.next();
                         let new_cmd = &chars.by_ref().take_while(|x| *x != ')').collect::<String>();
-                        let mut output = crate::run_from_string(new_cmd, env, false, None)?
-                            .ok_or("running command failed")?
-                            .stdout
-                            .ok_or("No stdout from command")?;
+                        let mut output =
+                            crate::run_from_string(Cow::Borrowed(new_cmd), env, false, None)?
+                                .ok_or("running command failed")?
+                                .stdout
+                                .ok_or("No stdout from command")?;
                         let mut buffer = String::new();
                         output.read_to_string(&mut buffer)?;
                         let final_output = buffer.trim_end();
@@ -409,7 +411,7 @@ pub fn parse_input(
 
 fn logical_operators(
     chars: &mut Peekable<OwnedChars>,
-    commands: &mut Vec<Vec<CommandPart>>,
+    commands: &mut [Vec<CommandPart>],
 ) -> Result<(), Box<dyn Error>> {
     chars.next();
     let first_cmd = if let CommandPart::Command(args) = commands.last().unwrap().first().unwrap() {

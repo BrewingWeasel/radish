@@ -5,6 +5,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use std::{
+    borrow::Cow,
     collections::HashMap,
     env,
     error::Error,
@@ -46,7 +47,7 @@ pub struct Env {
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     let mut lines = BufReader::new(File::open(path)?).lines();
     while let Some(line) = lines.next() {
-        run_from_string(&line.unwrap(), env, true, Some(&mut lines))?;
+        run_from_string(Cow::Borrowed(&line.unwrap()), env, true, Some(&mut lines))?;
     }
     Ok(())
 }
@@ -85,7 +86,7 @@ pub fn run_radish() {
         if input.is_empty() {
             continue;
         }
-        if let Err(e) = run_from_string(&input, &mut env, true, None) {
+        if let Err(e) = run_from_string(Cow::Borrowed(&input), &mut env, true, None) {
             eprintln!("{}", e);
         }
         history.push(input);
@@ -93,7 +94,7 @@ pub fn run_radish() {
 }
 
 fn run_from_string(
-    input: &String,
+    input: Cow<String>,
     env: &mut Env,
     output: bool,
     extra_lines: Option<&mut Lines<BufReader<File>>>,
@@ -102,7 +103,7 @@ fn run_from_string(
         return Ok(None);
     }
 
-    let mut new_input = input.clone();
+    let mut new_input = input.to_string();
     for alias in env.aliases.keys() {
         if new_input.starts_with(alias) {
             new_input = new_input.replacen(alias, env.aliases.get(alias).unwrap(), 1);
@@ -364,13 +365,13 @@ fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<Option<Child>,
 
 fn then_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
     if env.continue_if {
-        run_from_string(commands, env, true, None)?;
+        run_from_string(Cow::Borrowed(commands), env, true, None)?;
     }
     Ok(())
 }
 fn else_statement(env: &mut Env, commands: &String) -> Result<(), Box<dyn Error>> {
     if !env.continue_if {
-        run_from_string(commands, env, true, None)?;
+        run_from_string(Cow::Borrowed(commands), env, true, None)?;
     }
     Ok(())
 }
