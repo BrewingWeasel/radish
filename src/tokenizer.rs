@@ -14,6 +14,7 @@ pub enum CommandPart {
     ToFile((String, bool)),
     FromFile(String),
     Or,
+    And,
 }
 
 #[derive(Clone, Debug)]
@@ -245,8 +246,15 @@ pub fn parse_input(
                         current_token_index = 1;
                     }
                     ' ' => {
-                        if [Some(&' '), None, Some(&'<'), Some(&'>'), Some(&'|')]
-                            .contains(&chars.peek())
+                        if [
+                            Some(&' '),
+                            None,
+                            Some(&'<'),
+                            Some(&'>'),
+                            Some(&'|'),
+                            Some(&'&'),
+                        ]
+                        .contains(&chars.peek())
                         {
                             continue;
                         }
@@ -309,6 +317,18 @@ pub fn parse_input(
                         continue;
                     }
                     '&' => {
+                        if chars.peek() == Some(&'&') {
+                            commands.last_mut().unwrap().push(CommandPart::And);
+                            chars.next();
+                            commands
+                                .last_mut()
+                                .unwrap()
+                                .push(CommandPart::Command(vec![String::from("")]));
+                            chars.next();
+                            commandpart_index += 1;
+                            current_token_index = 1;
+                            continue;
+                        }
                         let mut reference_index = String::new();
                         while let Some(digit) = chars.by_ref().next_if(|c| c.is_ascii_digit()) {
                             reference_index.push(digit)

@@ -157,6 +157,15 @@ fn run_input(
                         continue;
                     }
                 }
+                CommandPart::And => {
+                    if last_command.unwrap().wait()?.to_string() == "exit status: 0" {
+                        last_command = None;
+                        continue;
+                    } else {
+                        last_command = None;
+                        break;
+                    }
+                }
                 _ => continue,
             }
             if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
@@ -182,7 +191,9 @@ fn run_input(
                             )
                         }
                     }
-                    CommandPart::FromFile(_) | CommandPart::Or => Stdio::inherit(),
+                    CommandPart::FromFile(_) | CommandPart::Or | CommandPart::And => {
+                        Stdio::inherit()
+                    }
                     _ => Stdio::piped(),
                 },
                 None => {
