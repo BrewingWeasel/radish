@@ -73,7 +73,6 @@ pub fn parse_input(
 
     loop {
         let c = chars.next();
-        println!("{:?} {current_token_index}", c);
         if (c == Some(' ') || c.is_none()) && !in_quotes {
             match currently_tokenizing {
                 CurrentlyTokenizing::GlobPattern => {
