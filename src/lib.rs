@@ -160,6 +160,7 @@ fn run_input(
     env: &mut Env,
     output: bool,
 ) -> Result<Option<Child>, Box<dyn Error>> {
+    println!("{:?}", commands);
     let mut last_command: Option<Child>;
     let mut commands_iter = commands.iter_mut().peekable();
     while let Some(input) = commands_iter.next() {

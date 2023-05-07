@@ -19,6 +19,16 @@ pub enum CommandPart {
     And,
 }
 
+impl CommandPart {
+    fn unwrap_command_mut(&mut self) -> &mut Vec<String> {
+        if let CommandPart::Command(args) = self {
+            args
+        } else {
+            panic!("Tried to parse a value other than command")
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ReplacementInfo {
     pub command_number: usize,
@@ -33,6 +43,18 @@ pub struct TokenizedOutput {
     pub replacements: Vec<Vec<ReplacementInfo>>,
 }
 
+enum ListType {
+    Regular,
+    GlobbedList,
+}
+
+enum CurrentlyTokenizing {
+    Arg,
+    GlobPattern,
+    List(ListType),
+    // VariableAssignment(usize),
+}
+
 // TODO: Clean up
 pub fn parse_input(
     input: &str,
@@ -40,7 +62,8 @@ pub fn parse_input(
     mut extra_lines: Option<&mut Lines<BufReader<File>>>,
 ) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
-    let mut in_glob_pattern = false;
+    // let mut in_glob_pattern = false;
+    let mut currently_tokenizing = CurrentlyTokenizing::Arg;
     let mut commands: Vec<Vec<CommandPart>> =
         vec![vec![CommandPart::Command(vec![String::from("")])]];
     let mut chars = OwnedChars::from_string(input.trim_start().to_owned()).peekable();
@@ -50,18 +73,57 @@ pub fn parse_input(
 
     loop {
         let c = chars.next();
-        if (c == Some(' ') || c.is_none()) && !in_quotes && in_glob_pattern {
-            if let CommandPart::Command(args) = commands.last().unwrap().last().unwrap() {
-                let glob_pattern = args.last().unwrap().clone();
-                if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
-                {
-                    cmd.pop();
-                    for entry in glob(&glob_pattern)?.flatten() {
-                        cmd.push(entry.display().to_string())
+        println!("{:?} {current_token_index}", c);
+        if (c == Some(' ') || c.is_none()) && !in_quotes {
+            match currently_tokenizing {
+                CurrentlyTokenizing::GlobPattern => {
+                    if let CommandPart::Command(args) = commands.last().unwrap().last().unwrap() {
+                        let glob_pattern = args.last().unwrap().clone();
+                        if let CommandPart::Command(cmd) =
+                            commands.last_mut().unwrap().last_mut().unwrap()
+                        {
+                            cmd.pop();
+                            for entry in glob(&glob_pattern)?.flatten() {
+                                cmd.push(entry.display().to_string())
+                            }
+                        }
                     }
                 }
+                CurrentlyTokenizing::List(list_type) => {
+                    let mut new_replacement = vec![];
+                    let last_cmd = commands.last_mut().unwrap().last_mut().unwrap();
+                    let last_str = last_cmd.unwrap_command_mut().pop().unwrap();
+                    last_cmd.unwrap_command_mut().push(String::new());
+                    for pattern in replacement {
+                        let list_with_replacements: Vec<String> =
+                            if matches!(list_type, ListType::GlobbedList) {
+                                let mut paths: Vec<String> = vec![];
+                                for i in glob(&last_str)? {
+                                    paths.push(i?.display().to_string());
+                                }
+                                paths
+                            } else {
+                                env.lists
+                                    .get(&last_str)
+                                    .ok_or(crate::InvalidItemError)?
+                                    .to_vec()
+                            };
+                        for item in list_with_replacements {
+                            let mut replacement_pattern = pattern.clone();
+                            replacement_pattern.push(ReplacementInfo {
+                                command_number: commands.len() - 1,
+                                command_part_number: commandpart_index,
+                                token_number: current_token_index,
+                                replacement: item.to_string(),
+                            });
+                            new_replacement.push(replacement_pattern);
+                        }
+                    }
+                    replacement = new_replacement;
+                }
+                _ => (),
             }
-            in_glob_pattern = false;
+            currently_tokenizing = CurrentlyTokenizing::Arg;
         }
         let last_str = match commands.last_mut().unwrap().last_mut().unwrap() {
             CommandPart::Command(args) => args.last_mut().unwrap(),
@@ -276,50 +338,21 @@ pub fn parse_input(
                         last_str.push_str(env.locations.get(&name).ok_or(crate::InvalidItemError)?)
                     }
                     '*' => {
-                        in_glob_pattern = true;
+                        currently_tokenizing = CurrentlyTokenizing::GlobPattern;
                         last_str.push('*');
                     }
                     '%' => {
-                        let mut name = String::new();
                         let is_glob_list = if chars.peek() == Some(&'%') {
                             chars.next();
-                            true
+                            ListType::GlobbedList
                         } else {
-                            false
+                            ListType::Regular
                         };
-                        while let Some(digit) = chars.by_ref().next_if(|c| *c != ' ' && *c != '\n')
-                        {
-                            name.push(digit)
-                        }
-                        let mut new_replacement = vec![];
-                        for pattern in replacement {
-                            let list_with_replacements: Vec<String> = if is_glob_list {
-                                let mut paths: Vec<String> = vec![];
-                                for i in glob(&name)? {
-                                    paths.push(i?.display().to_string());
-                                }
-                                paths
-                            } else {
-                                env.lists
-                                    .get(&name)
-                                    .ok_or(crate::InvalidItemError)?
-                                    .to_vec()
-                            };
-                            for item in list_with_replacements {
-                                let mut replacement_pattern = pattern.clone();
-                                replacement_pattern.push(ReplacementInfo {
-                                    command_number: commands.len() - 1,
-                                    command_part_number: commandpart_index,
-                                    token_number: current_token_index,
-                                    replacement: item.to_string(),
-                                });
-                                new_replacement.push(replacement_pattern);
-                            }
-                        }
-                        replacement = new_replacement;
+                        currently_tokenizing = CurrentlyTokenizing::List(is_glob_list);
                         continue;
                     }
                     '&' => {
+                        current_token_index += 1;
                         if chars.peek() == Some(&'&') {
                             commands.last_mut().unwrap().push(CommandPart::And);
                             logical_operators(&mut chars, &mut commands)?;
@@ -327,6 +360,13 @@ pub fn parse_input(
                             current_token_index = 1;
                             continue;
                         }
+
+                        if let CommandPart::Command(cmd) =
+                            commands.last_mut().unwrap().last_mut().unwrap()
+                        {
+                            cmd.push(String::from(""));
+                        }
+
                         let mut reference_index = String::new();
                         while let Some(digit) = chars.by_ref().next_if(|c| c.is_ascii_digit()) {
                             reference_index.push(digit)
@@ -342,7 +382,6 @@ pub fn parse_input(
                                 replacement: original_str,
                             });
                         }
-                        continue;
                     }
                     '>' => {
                         commands
