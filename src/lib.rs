@@ -7,7 +7,7 @@ use crossterm::{
 use std::{
     borrow::Cow,
     collections::HashMap,
-    env,
+    env::{self, args},
     error::Error,
     fs::{read_dir, File, OpenOptions},
     io::{stdout, BufRead, BufReader, Lines, Write},
@@ -75,6 +75,17 @@ pub fn run_radish() {
     };
     env.shell_variables
         .insert(String::from("?"), String::from("0"));
+    let mut args = args().peekable();
+    args.next();
+    if args.peek() == Some(&String::from("-e")) {
+        args.next();
+    }
+    if let Some(file) = args.next() {
+        if let Err(e) = run_from_file(PathBuf::from(file), &mut env) {
+            eprintln!("{e}");
+        }
+        return;
+    }
     _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
