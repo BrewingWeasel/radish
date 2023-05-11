@@ -136,8 +136,25 @@ fn generate_commands(
     env: &mut Env,
     output: bool,
 ) -> Result<Option<Child>, Box<dyn Error>> {
+    let reset_value = match &parsed_input.variable_assignment {
+        Some((name, value)) => {
+            if parsed_input.commands == vec![vec![CommandPart::Command(vec![])]] {
+                env::set_var(name, value);
+                return Ok(None);
+            } else {
+                let old_value = env::var(name).unwrap_or(String::new());
+                env::set_var(name, value);
+                Some(old_value)
+            }
+        }
+        None => None,
+    };
     if parsed_input.replacements.first().unwrap().is_empty() {
-        return run_input(parsed_input.commands, env, output);
+        let output = run_input(parsed_input.commands, env, output);
+        if let Some(old_value) = reset_value {
+            env::set_var(parsed_input.variable_assignment.unwrap().0, old_value);
+        }
+        return output;
     }
     let mut last_command = None;
     for replacement in parsed_input.replacements {
@@ -152,6 +169,9 @@ fn generate_commands(
         }
         last_command = run_input(final_tokens, env, output)?;
     }
+    if let Some(old_value) = reset_value {
+        env::set_var(parsed_input.variable_assignment.unwrap().0, old_value);
+    }
     Ok(last_command)
 }
 
@@ -160,7 +180,6 @@ fn run_input(
     env: &mut Env,
     output: bool,
 ) -> Result<Option<Child>, Box<dyn Error>> {
-    println!("{:?}", commands);
     let mut last_command: Option<Child>;
     let mut commands_iter = commands.iter_mut().peekable();
     while let Some(input) = commands_iter.next() {
@@ -291,6 +310,7 @@ fn run(
             cd(args);
             Ok(None)
         }
+        "" => Ok(None),
         "if" => Ok(if_statement(env, args)?),
         "elif" => Ok(elif_statement(env, args)?),
         "then" => {

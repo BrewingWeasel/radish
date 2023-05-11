@@ -41,6 +41,7 @@ pub struct ReplacementInfo {
 pub struct TokenizedOutput {
     pub commands: Vec<Vec<CommandPart>>,
     pub replacements: Vec<Vec<ReplacementInfo>>,
+    pub variable_assignment: Option<(String, String)>,
 }
 
 enum ListType {
@@ -52,7 +53,7 @@ enum CurrentlyTokenizing {
     Arg,
     GlobPattern,
     List(ListType),
-    // VariableAssignment(usize),
+    VariableAssignment(usize),
 }
 
 // TODO: Clean up
@@ -62,7 +63,7 @@ pub fn parse_input(
     mut extra_lines: Option<&mut Lines<BufReader<File>>>,
 ) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
-    // let mut in_glob_pattern = false;
+    let mut variable_assignment = None;
     let mut currently_tokenizing = CurrentlyTokenizing::Arg;
     let mut commands: Vec<Vec<CommandPart>> =
         vec![vec![CommandPart::Command(vec![String::from("")])]];
@@ -119,6 +120,26 @@ pub fn parse_input(
                         }
                     }
                     replacement = new_replacement;
+                }
+                CurrentlyTokenizing::VariableAssignment(place) => {
+                    let last_cmd = commands.last_mut().unwrap().last_mut().unwrap();
+                    let last_str = last_cmd.unwrap_command_mut().pop().unwrap();
+                    let (variable_name, variable_value) = last_str.split_at(place);
+                    variable_assignment =
+                        Some((variable_name.to_string(), variable_value.to_string()));
+                    if chars.peek().is_none() {
+                        break;
+                    }
+                    commands
+                        .last_mut()
+                        .unwrap()
+                        .last_mut()
+                        .unwrap()
+                        .unwrap_command_mut()
+                        .push(String::new());
+                    println!("{:?}", commands);
+                    currently_tokenizing = CurrentlyTokenizing::Arg;
+                    continue;
                 }
                 _ => (),
             }
@@ -433,6 +454,14 @@ pub fn parse_input(
                             }
                         }
                     }
+                    '=' => {
+                        if current_token_index == 1 {
+                            currently_tokenizing =
+                                CurrentlyTokenizing::VariableAssignment(last_str.len())
+                        } else {
+                            last_str.push('=');
+                        }
+                    }
                     _ => last_str.push(i),
                 }
             } else {
@@ -443,6 +472,7 @@ pub fn parse_input(
     // Ok((commands, replacement))
     Ok(TokenizedOutput {
         commands,
+        variable_assignment,
         replacements: replacement,
     })
 }
