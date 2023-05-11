@@ -360,8 +360,8 @@ fn run(
 
 pub fn exit(env: &mut Env) {
     let mut file = OpenOptions::new()
-        .append(true)
         .create(true)
+        .write(true)
         .open(dirs::home_dir().unwrap().join(".radish_history"))
         .unwrap();
     for i in &env.history {
