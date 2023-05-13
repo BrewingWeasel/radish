@@ -142,6 +142,23 @@ pub fn parse_input(
                     currently_tokenizing = CurrentlyTokenizing::Arg;
                     continue;
                 }
+                CurrentlyTokenizing::Function => {
+                    let (contents, new_chars) =
+                        multiline_loop_parsing(chars, &mut extra_lines, func_specific_parsing)?;
+                    chars = new_chars;
+                    if let CommandPart::Command(cmd) =
+                        commands.last_mut().unwrap().last_mut().unwrap()
+                    {
+                        cmd.push(String::from("function"));
+                        cmd.push(contents.first().unwrap().to_string());
+                    }
+                    for branch in contents[1..].iter() {
+                        commands.last_mut().unwrap().push(CommandPart::Command(
+                            branch.splitn(2, ' ').map(|x| x.to_string()).collect(),
+                        ));
+                    }
+                    continue;
+                }
                 _ => (),
             }
             currently_tokenizing = CurrentlyTokenizing::Arg;
@@ -153,36 +170,9 @@ pub fn parse_input(
             _ => unreachable!(),
         };
         if last_str == "then" {
-            let mut contents = vec![String::new()];
-            let mut parsing_vars = MultilineVariables {
-                add_semicolon: false,
-                block_in_single_quotes: false,
-                block_in_quotes: false,
-                last_cmd: String::new(),
-            };
-            loop {
-                if let Some(new_chars) = check_for_new_line(
-                    &mut chars,
-                    &mut extra_lines,
-                    &parsing_vars.add_semicolon,
-                    &mut contents,
-                )? {
-                    chars = new_chars;
-                    parsing_vars.last_cmd = String::new();
-                }
-                let (action, new_parsing_vars) = parse_char_multiline_statement(
-                    &mut contents,
-                    &mut chars,
-                    parsing_vars,
-                    if_specific_parsing,
-                );
-                parsing_vars = new_parsing_vars;
-                match action {
-                    ActionToTake::Break => break,
-                    ActionToTake::Continue => continue,
-                    _ => (),
-                }
-            }
+            let (contents, new_chars) =
+                multiline_loop_parsing(chars, &mut extra_lines, if_specific_parsing)?;
+            chars = new_chars;
             if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap() {
                 cmd.push(contents.first().unwrap().to_string());
             }
@@ -537,6 +527,20 @@ fn parse_char_multiline_statement(
     specific_parsing(parsing_vars, contents)
 }
 
+fn func_specific_parsing(
+    parsing_vars: MultilineVariables,
+    contents: &mut Vec<String>,
+) -> (ActionToTake, MultilineVariables) {
+    if !parsing_vars.block_in_single_quotes
+        && !parsing_vars.block_in_quotes
+        && contents.last().unwrap() == "}"
+    {
+        (ActionToTake::Break, parsing_vars)
+    } else {
+        (ActionToTake::None, parsing_vars)
+    }
+}
+
 fn if_specific_parsing(
     mut parsing_vars: MultilineVariables,
     contents: &mut Vec<String>,
@@ -563,4 +567,45 @@ fn if_specific_parsing(
         }
     }
     return (ActionToTake::None, parsing_vars);
+}
+
+fn multiline_loop_parsing(
+    mut chars: Peekable<OwnedChars>,
+    extra_lines: &mut Option<&mut Lines<BufReader<File>>>,
+    specific_parsing: fn(
+        MultilineVariables,
+        &mut Vec<String>,
+    ) -> (ActionToTake, MultilineVariables),
+) -> Result<(Vec<String>, Peekable<OwnedChars>), Box<dyn Error>> {
+    let mut contents = vec![String::new()];
+    let mut parsing_vars = MultilineVariables {
+        add_semicolon: false,
+        block_in_single_quotes: false,
+        block_in_quotes: false,
+        last_cmd: String::new(),
+    };
+    loop {
+        if let Some(new_chars) = check_for_new_line(
+            &mut chars,
+            extra_lines,
+            &parsing_vars.add_semicolon,
+            &mut contents,
+        )? {
+            chars = new_chars;
+            parsing_vars.last_cmd = String::new();
+        }
+        let (action, new_parsing_vars) = parse_char_multiline_statement(
+            &mut contents,
+            &mut chars,
+            parsing_vars,
+            specific_parsing,
+        );
+        parsing_vars = new_parsing_vars;
+        match action {
+            ActionToTake::Break => break,
+            ActionToTake::Continue => continue,
+            _ => (),
+        }
+    }
+    Ok((contents, chars))
 }
