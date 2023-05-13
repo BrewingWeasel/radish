@@ -154,82 +154,29 @@ pub fn parse_input(
         };
         if last_str == "then" {
             let mut contents = vec![String::new()];
-            let mut last_cmd = String::new();
-            let mut block_in_quotes = false;
-            let mut block_in_single_quotes = false;
-            let mut add_semicolon = false;
+            let mut parsing_vars = MultilineVariables {
+                add_semicolon: false,
+                block_in_single_quotes: false,
+                block_in_quotes: false,
+                last_cmd: String::new(),
+            };
             loop {
-                if let Some(new_chars) =
-                    check_for_new_line(&mut chars, &mut extra_lines, add_semicolon, &mut contents)?
-                {
+                if let Some(new_chars) = check_for_new_line(
+                    &mut chars,
+                    &mut extra_lines,
+                    &parsing_vars.add_semicolon,
+                    &mut contents,
+                )? {
                     chars = new_chars;
-                    last_cmd = String::new();
+                    parsing_vars.last_cmd = String::new();
                 }
-                let last_contents = contents.last_mut().unwrap();
-                add_semicolon = true;
-                let c = match chars.next() {
-                    Some(c) => c,
-                    None => {
-                        break;
-                    }
-                };
-                if block_in_single_quotes && c == '\'' {
-                    block_in_single_quotes = false;
-                    last_contents.push('\'');
-                    continue;
-                }
-                match c {
-                    '\'' => block_in_single_quotes = true,
-                    '\\' => {
-                        last_contents.push(chars.next().unwrap());
-                    }
-                    '"' => block_in_quotes = !block_in_quotes,
-                    ';' | '\n' => {
-                        last_cmd = String::new();
-                    }
+                let (action, new_parsing_vars) =
+                    parse_char_multiline_statement(&mut contents, &mut chars, parsing_vars);
+                parsing_vars = new_parsing_vars;
+                match action {
+                    ActionToTake::Break => break,
+                    ActionToTake::Continue => continue,
                     _ => (),
-                };
-                last_contents.push(c);
-                if !c.is_whitespace() && c != ';' && last_cmd.len() < 4 {
-                    last_cmd.push(c);
-                }
-                if !block_in_single_quotes && !block_in_quotes {
-                    match last_cmd.as_str() {
-                        "fi" => {
-                            *last_contents = last_contents
-                                .strip_suffix("fi")
-                                .unwrap()
-                                .trim_end()
-                                .strip_suffix(';')
-                                .unwrap()
-                                .to_string();
-                            break;
-                        }
-                        "elif" => {
-                            *last_contents = last_contents
-                                .strip_suffix("elif")
-                                .unwrap()
-                                .trim_end()
-                                .strip_suffix(';')
-                                .unwrap()
-                                .to_string();
-                            contents.push(String::from("elif"));
-                            break;
-                        }
-                        "else" => {
-                            *last_contents = last_contents
-                                .strip_suffix("else")
-                                .unwrap()
-                                .trim_end()
-                                .strip_suffix(';')
-                                .unwrap()
-                                .to_string();
-                            last_cmd = String::new();
-                            contents.push(String::from("else"));
-                            add_semicolon = false;
-                        }
-                        _ => (),
-                    }
                 }
             }
             if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap() {
@@ -495,7 +442,7 @@ fn logical_operators(
 fn check_for_new_line(
     chars: &mut Peekable<OwnedChars>,
     extra_lines: &mut Option<&mut Lines<BufReader<File>>>,
-    add_semicolon: bool,
+    add_semicolon: &bool,
     contents: &mut Vec<String>,
 ) -> Result<Option<Peekable<OwnedChars>>, Box<dyn Error>> {
     if chars.peek().is_none() {
@@ -505,7 +452,7 @@ fn check_for_new_line(
                 return Err("Expected more input".into());
             }
         };
-        if add_semicolon {
+        if *add_semicolon {
             contents.last_mut().unwrap().push(';');
         } else {
             contents.last_mut().unwrap().push(' ');
@@ -520,4 +467,84 @@ fn check_for_new_line(
     } else {
         Ok(None)
     }
+}
+
+fn trim_block_keyword(keyword: &str, last_contents: &mut String) -> String {
+    last_contents
+        .strip_suffix(keyword)
+        .unwrap()
+        .trim_end()
+        .strip_suffix(';')
+        .unwrap()
+        .to_string()
+}
+
+enum ActionToTake {
+    Break,
+    Continue,
+    None,
+}
+
+struct MultilineVariables {
+    block_in_quotes: bool,
+    block_in_single_quotes: bool,
+    add_semicolon: bool,
+    last_cmd: String,
+}
+
+fn parse_char_multiline_statement(
+    contents: &mut Vec<String>,
+    chars: &mut Peekable<OwnedChars>,
+    mut parsing_vars: MultilineVariables,
+) -> (ActionToTake, MultilineVariables) {
+    let last_contents = contents.last_mut().unwrap();
+    // let mut new_last_cmd = Some(*last_cmd);
+    parsing_vars.add_semicolon = true;
+    let c = match chars.next() {
+        Some(c) => c,
+        None => {
+            return (ActionToTake::Break, parsing_vars);
+        }
+    };
+    if parsing_vars.block_in_single_quotes && c == '\'' {
+        parsing_vars.block_in_single_quotes = false;
+        last_contents.push('\'');
+        return (ActionToTake::Continue, parsing_vars);
+    }
+    match c {
+        '\'' => parsing_vars.block_in_single_quotes = true,
+        '\\' => {
+            last_contents.push(chars.next().unwrap());
+        }
+        '"' => parsing_vars.block_in_quotes = !parsing_vars.block_in_quotes,
+        ';' | '\n' => {
+            parsing_vars.last_cmd = String::new();
+        }
+        _ => (),
+    };
+    last_contents.push(c);
+    if !c.is_whitespace() && c != ';' && parsing_vars.last_cmd.len() < 4 {
+        parsing_vars.last_cmd.push(c);
+    }
+    if !parsing_vars.block_in_single_quotes && !parsing_vars.block_in_quotes {
+        match parsing_vars.last_cmd.as_str() {
+            "fi" => {
+                *last_contents = trim_block_keyword("fi", last_contents);
+                return (ActionToTake::Break, parsing_vars);
+            }
+            "elif" => {
+                *last_contents = trim_block_keyword("elif", last_contents);
+                contents.push(String::from("elif"));
+                return (ActionToTake::Break, parsing_vars);
+            }
+            "else" => {
+                *last_contents = trim_block_keyword("else", last_contents);
+                parsing_vars.last_cmd = String::new();
+                contents.push(String::from("else"));
+                parsing_vars.add_semicolon = false;
+            }
+            _ => (),
+        }
+    }
+    return (ActionToTake::None, parsing_vars);
 }
