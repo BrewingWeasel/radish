@@ -54,6 +54,7 @@ enum CurrentlyTokenizing {
     GlobPattern,
     List(ListType),
     VariableAssignment(usize),
+    Function,
 }
 
 // TODO: Clean up
@@ -158,27 +159,11 @@ pub fn parse_input(
             let mut block_in_single_quotes = false;
             let mut add_semicolon = false;
             loop {
-                if chars.peek().is_none() {
-                    let next_line = match extra_lines {
-                        Some(ref mut lines) => {
-                            lines.next().ok_or("Expected another line")?.unwrap()
-                        }
-                        None => {
-                            return Err("Expected more input".into());
-                        }
-                    };
-                    if add_semicolon {
-                        contents.last_mut().unwrap().push(';');
-                    } else {
-                        contents.last_mut().unwrap().push(' ');
-                    }
+                if let Some(new_chars) =
+                    check_for_new_line(&mut chars, &mut extra_lines, add_semicolon, &mut contents)?
+                {
+                    chars = new_chars;
                     last_cmd = String::new();
-                    chars = OwnedChars::from_string(next_line).peekable();
-                    loop {
-                        if chars.next_if(|c| c.is_whitespace()).is_none() {
-                            break;
-                        }
-                    }
                 }
                 let last_contents = contents.last_mut().unwrap();
                 add_semicolon = true;
@@ -462,6 +447,13 @@ pub fn parse_input(
                             last_str.push('=');
                         }
                     }
+                    ')' => {
+                        if current_token_index == 2 && last_str == "(" {
+                            currently_tokenizing = CurrentlyTokenizing::Function
+                        } else {
+                            last_str.push(')');
+                        }
+                    }
                     _ => last_str.push(i),
                 }
             } else {
@@ -498,4 +490,34 @@ fn logical_operators(
         .push(CommandPart::Command(new_cmd));
     chars.next();
     Ok(())
+}
+
+fn check_for_new_line(
+    chars: &mut Peekable<OwnedChars>,
+    extra_lines: &mut Option<&mut Lines<BufReader<File>>>,
+    add_semicolon: bool,
+    contents: &mut Vec<String>,
+) -> Result<Option<Peekable<OwnedChars>>, Box<dyn Error>> {
+    if chars.peek().is_none() {
+        let next_line = match extra_lines {
+            Some(ref mut lines) => lines.next().ok_or("Expected another line")?.unwrap(),
+            None => {
+                return Err("Expected more input".into());
+            }
+        };
+        if add_semicolon {
+            contents.last_mut().unwrap().push(';');
+        } else {
+            contents.last_mut().unwrap().push(' ');
+        }
+        let mut new_chars = OwnedChars::from_string(next_line).peekable();
+        loop {
+            if new_chars.next_if(|c| c.is_whitespace()).is_none() {
+                break;
+            }
+        }
+        Ok(Some(new_chars))
+    } else {
+        Ok(None)
+    }
 }
