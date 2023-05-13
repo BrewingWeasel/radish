@@ -170,8 +170,12 @@ pub fn parse_input(
                     chars = new_chars;
                     parsing_vars.last_cmd = String::new();
                 }
-                let (action, new_parsing_vars) =
-                    parse_char_multiline_statement(&mut contents, &mut chars, parsing_vars);
+                let (action, new_parsing_vars) = parse_char_multiline_statement(
+                    &mut contents,
+                    &mut chars,
+                    parsing_vars,
+                    if_specific_parsing,
+                );
                 parsing_vars = new_parsing_vars;
                 match action {
                     ActionToTake::Break => break,
@@ -496,6 +500,10 @@ fn parse_char_multiline_statement(
     contents: &mut Vec<String>,
     chars: &mut Peekable<OwnedChars>,
     mut parsing_vars: MultilineVariables,
+    specific_parsing: fn(
+        MultilineVariables,
+        &mut Vec<String>,
+    ) -> (ActionToTake, MultilineVariables),
 ) -> (ActionToTake, MultilineVariables) {
     let last_contents = contents.last_mut().unwrap();
     // let mut new_last_cmd = Some(*last_cmd);
@@ -526,6 +534,14 @@ fn parse_char_multiline_statement(
     if !c.is_whitespace() && c != ';' && parsing_vars.last_cmd.len() < 4 {
         parsing_vars.last_cmd.push(c);
     }
+    specific_parsing(parsing_vars, contents)
+}
+
+fn if_specific_parsing(
+    mut parsing_vars: MultilineVariables,
+    contents: &mut Vec<String>,
+) -> (ActionToTake, MultilineVariables) {
+    let last_contents = contents.last_mut().unwrap();
     if !parsing_vars.block_in_single_quotes && !parsing_vars.block_in_quotes {
         match parsing_vars.last_cmd.as_str() {
             "fi" => {
