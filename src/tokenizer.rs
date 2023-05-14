@@ -138,7 +138,6 @@ pub fn parse_input(
                         .unwrap()
                         .unwrap_command_mut()
                         .push(String::new());
-                    println!("{:?}", commands);
                     currently_tokenizing = CurrentlyTokenizing::Arg;
                     continue;
                 }
@@ -157,6 +156,7 @@ pub fn parse_input(
                             branch.splitn(2, ' ').map(|x| x.to_string()).collect(),
                         ));
                     }
+                    currently_tokenizing = CurrentlyTokenizing::Arg;
                     continue;
                 }
                 _ => (),
@@ -390,7 +390,14 @@ pub fn parse_input(
                     }
                     ')' => {
                         if current_token_index == 2 && last_str == "(" {
-                            currently_tokenizing = CurrentlyTokenizing::Function
+                            currently_tokenizing = CurrentlyTokenizing::Function;
+                            commands
+                                .last_mut()
+                                .unwrap()
+                                .last_mut()
+                                .unwrap()
+                                .unwrap_command_mut()
+                                .pop();
                         } else {
                             last_str.push(')');
                         }
@@ -529,11 +536,11 @@ fn parse_char_multiline_statement(
 
 fn func_specific_parsing(
     parsing_vars: MultilineVariables,
-    contents: &mut Vec<String>,
+    _contents: &mut Vec<String>,
 ) -> (ActionToTake, MultilineVariables) {
     if !parsing_vars.block_in_single_quotes
         && !parsing_vars.block_in_quotes
-        && contents.last().unwrap() == "}"
+        && parsing_vars.last_cmd.as_str() == "}"
     {
         (ActionToTake::Break, parsing_vars)
     } else {
