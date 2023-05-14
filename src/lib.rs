@@ -34,6 +34,11 @@ impl std::fmt::Display for InvalidItemError {
     }
 }
 
+pub enum Scope {
+    Main,
+    Function,
+}
+
 pub struct Env {
     history: Vec<String>,
     commands: Vec<String>,
@@ -44,6 +49,7 @@ pub struct Env {
     functions: HashMap<String, String>,
     shell_variables: HashMap<String, String>,
     continue_if: bool,
+    scope: Scope,
 }
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     let mut lines = BufReader::new(File::open(path)?).lines();
@@ -74,6 +80,7 @@ pub fn run_radish() {
         aliases: HashMap::new(),
         shell_variables: HashMap::new(),
         continue_if: false,
+        scope: Scope::Main,
     };
     env.shell_variables
         .insert(String::from("?"), String::from("0"));
@@ -211,9 +218,11 @@ fn run_input(
                 }
                 _ => continue,
             }
+
             if !matches!(input.get(token_index).unwrap(), CommandPart::Command(_)) {
                 continue;
             }
+
             let mut stdout = match input.get(token_index + 1) {
                 Some(part) => match part {
                     CommandPart::ToFile((file_name, append)) => {
@@ -349,6 +358,18 @@ fn run(
             exit(env);
             unreachable!()
         }
+        "return" => {
+            if let Scope::Function = env.scope {
+                env.shell_variables
+                    .insert(String::from("?"), args.first().unwrap().to_string());
+
+                // Hack to stop executing
+                Err("".into())
+            } else {
+                eprintln!("Can only return from a function");
+                Ok(None)
+            }
+        }
         command => {
             if let Some(contents) = env.functions.get(command) {
                 let new_contents = contents
@@ -358,7 +379,9 @@ fn run(
                     .strip_suffix('}')
                     .unwrap()
                     .to_string();
+                env.scope = Scope::Function;
                 let last_cmd = run_from_string(Cow::Borrowed(&new_contents), env, true, None)?;
+                env.scope = Scope::Main;
                 Ok(last_cmd)
             } else {
                 match Command::new(command)
