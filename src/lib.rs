@@ -41,6 +41,7 @@ pub struct Env {
     lists: HashMap<String, Vec<String>>,
     locations: HashMap<String, String>,
     aliases: HashMap<String, String>,
+    functions: HashMap<String, String>,
     shell_variables: HashMap<String, String>,
     continue_if: bool,
 }
@@ -68,6 +69,7 @@ pub fn run_radish() {
         commands,
         prompt_length: 3,
         lists: HashMap::new(),
+        functions: HashMap::new(),
         locations: HashMap::new(),
         aliases: HashMap::new(),
         shell_variables: HashMap::new(),
@@ -339,8 +341,8 @@ fn run(
             mkloc(&mut env.locations, args);
             Ok(None)
         }
-        "func" => {
-            print!("{:?}", args);
+        "function" => {
+            mkloc(&mut env.functions, args);
             Ok(None)
         }
         "exit" => {
@@ -348,16 +350,28 @@ fn run(
             unreachable!()
         }
         command => {
-            match Command::new(command)
-                .args(args)
-                .stdin(stdin)
-                .stdout(stdout)
-                .spawn()
-            {
-                Ok(output) => Ok(Some(output)),
-                Err(e) => {
-                    println!("Error running {command}: {e}");
-                    Ok(None)
+            if let Some(contents) = env.functions.get(command) {
+                let new_contents = contents
+                    .strip_prefix('{')
+                    .unwrap()
+                    .trim_matches(';')
+                    .strip_suffix('}')
+                    .unwrap()
+                    .to_string();
+                let last_cmd = run_from_string(Cow::Borrowed(&new_contents), env, true, None)?;
+                Ok(last_cmd)
+            } else {
+                match Command::new(command)
+                    .args(args)
+                    .stdin(stdin)
+                    .stdout(stdout)
+                    .spawn()
+                {
+                    Ok(output) => Ok(Some(output)),
+                    Err(e) => {
+                        eprintln!("Error running {command}: {e}");
+                        Ok(None)
+                    }
                 }
             }
         }

@@ -148,7 +148,7 @@ pub fn parse_input(
                     if let CommandPart::Command(cmd) =
                         commands.last_mut().unwrap().last_mut().unwrap()
                     {
-                        cmd.push(String::from("function"));
+                        cmd.insert(0, String::from("function"));
                         cmd.push(contents.first().unwrap().to_string());
                     }
                     for branch in contents[1..].iter() {
