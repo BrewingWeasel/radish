@@ -86,7 +86,9 @@ pub fn run_radish() {
         }
         return;
     }
-    _ = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env);
+    if let Err(e) = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env) {
+        eprintln!("{e}");
+    };
     loop {
         execute!(stdout(), MoveToColumn(0)).unwrap();
         let prompt = unescape(env::var("PS1").unwrap_or("~> ".to_string()));
@@ -180,7 +182,6 @@ fn run_input(
     env: &mut Env,
     output: bool,
 ) -> Result<Option<Child>, Box<dyn Error>> {
-    println!("{:?}", commands);
     let mut last_command: Option<Child>;
     let mut commands_iter = commands.iter_mut().peekable();
     while let Some(input) = commands_iter.next() {
@@ -336,6 +337,10 @@ fn run(
         }
         "mkloc" => {
             mkloc(&mut env.locations, args);
+            Ok(None)
+        }
+        "func" => {
+            print!("{:?}", args);
             Ok(None)
         }
         "exit" => {
