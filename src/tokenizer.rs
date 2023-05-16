@@ -72,10 +72,11 @@ pub fn parse_input(
     let mut commandpart_index = 0;
     let mut current_token_index = 1;
     let mut replacement: Vec<Vec<ReplacementInfo>> = vec![vec![]];
+    let mut analyze_next = false;
 
     loop {
         let c = chars.next();
-        if (c == Some(' ') || c.is_none()) && !in_quotes {
+        if (c == Some(' ') || c.is_none() || analyze_next) && !in_quotes {
             match currently_tokenizing {
                 CurrentlyTokenizing::GlobPattern => {
                     if let CommandPart::Command(args) = commands.last().unwrap().last().unwrap() {
@@ -157,6 +158,7 @@ pub fn parse_input(
                         ));
                     }
                     currently_tokenizing = CurrentlyTokenizing::Arg;
+                    analyze_next = false;
                     continue;
                 }
                 _ => (),
@@ -169,22 +171,49 @@ pub fn parse_input(
             CommandPart::FromFile(name) => name,
             _ => unreachable!(),
         };
-        if last_str == "then" {
-            let (contents, new_chars) =
-                multiline_loop_parsing(chars, &mut extra_lines, if_specific_parsing)?;
-            chars = new_chars;
-            if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap() {
-                cmd.push(contents.first().unwrap().to_string());
+        match last_str.as_str() {
+            "then" => {
+                let (contents, new_chars) =
+                    multiline_loop_parsing(chars, &mut extra_lines, if_specific_parsing)?;
+                chars = new_chars;
+                if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
+                {
+                    cmd.push(contents.first().unwrap().to_string());
+                }
+                for branch in contents[1..].iter() {
+                    commands.last_mut().unwrap().push(CommandPart::Command(
+                        branch.splitn(2, ' ').map(|x| x.to_string()).collect(),
+                    ));
+                }
+                continue;
             }
-            for branch in contents[1..].iter() {
-                commands.last_mut().unwrap().push(CommandPart::Command(
-                    branch.splitn(2, ' ').map(|x| x.to_string()).collect(),
-                ));
+            "function" => {
+                commands
+                    .last_mut()
+                    .unwrap()
+                    .last_mut()
+                    .unwrap()
+                    .unwrap_command_mut()
+                    .pop();
+                let mut function_name = String::new();
+                while let Some(c) = chars.peek() {
+                    if c.is_whitespace() {
+                        break;
+                    }
+                    function_name.push(chars.next().unwrap());
+                }
+                commands
+                    .last_mut()
+                    .unwrap()
+                    .last_mut()
+                    .unwrap()
+                    .unwrap_command_mut()
+                    .push(function_name);
+                currently_tokenizing = CurrentlyTokenizing::Function;
+                analyze_next = true;
+                continue;
             }
-            continue;
-        }
-        if c.is_none() {
-            break;
+            _ => (),
         }
         if let Some(i) = c {
             match i {
@@ -407,6 +436,8 @@ pub fn parse_input(
             } else {
                 last_str.push(i);
             }
+        } else {
+            break;
         }
     }
     // Ok((commands, replacement))
