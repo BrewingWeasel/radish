@@ -181,6 +181,9 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
     let mut most_shared = 0;
     let mut number_of_shared = 0;
     for (i, option) in options.iter().enumerate() {
+        if option.as_str() == input {
+            return None;
+        }
         let mut cur_shared = 0;
         let mut input_chars = input.chars();
         let mut option_chars = option.chars();

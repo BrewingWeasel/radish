@@ -34,11 +34,13 @@ impl std::fmt::Display for InvalidItemError {
     }
 }
 
+#[derive(Debug)]
 pub enum Scope {
     Main,
     Function,
 }
 
+#[derive(Debug)]
 pub struct Env {
     history: Vec<String>,
     commands: Vec<String>,
