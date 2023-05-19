@@ -21,6 +21,12 @@ pub fn get_input(env: &mut crate::Env) -> String {
     let mut in_quotes = false;
     let mut after_slash = false;
     let mut currently_completing = CompletionType::Command;
+    let new_history = env
+        .sorted_history
+        .iter()
+        .map(|x| Cow::Borrowed(x))
+        .collect();
+    let mut suggested_input: Option<&str> = None;
     loop {
         if let Event::Key(x) = read().unwrap() {
             match x.code {
@@ -102,7 +108,10 @@ pub fn get_input(env: &mut crate::Env) -> String {
                         input.replace_range(input.len() - completing_values.0.len().., completion);
                     }
                 }
-                KeyCode::Esc => exit(env),
+                KeyCode::Esc => {
+                    exit(env);
+                    unreachable!()
+                }
                 KeyCode::Enter => {
                     execute!(stdout(), Print('\n'), MoveToColumn(0)).unwrap();
                     break;
@@ -112,6 +121,20 @@ pub fn get_input(env: &mut crate::Env) -> String {
                         // TODO: add ctrl delete
                     } else if input.pop().is_some() {
                         execute!(stdout(), MoveLeft(1), Print(" "), MoveLeft(1)).unwrap()
+                    }
+                }
+                KeyCode::Right => {
+                    if let Some(mut completion) = suggested_input {
+                        completion = completion.strip_prefix(&input).unwrap();
+                        execute!(
+                            stdout(),
+                            ResetColor,
+                            MoveToColumn(env.prompt_length + u16::try_from(input.len()).unwrap()),
+                            Clear(crossterm::terminal::ClearType::UntilNewLine),
+                            Print(completion),
+                        )
+                        .unwrap();
+                        input.push_str(completion)
                     }
                 }
                 KeyCode::Up => {
@@ -158,6 +181,24 @@ pub fn get_input(env: &mut crate::Env) -> String {
                 _ => (),
             }
         }
+        suggested_input = suggest(&input, &new_history);
+        if let Some(mut completion) = suggested_input {
+            completion = if let Some(completion) = completion.strip_prefix(&input) {
+                completion
+            } else {
+                continue;
+            };
+            execute!(
+                stdout(),
+                MoveToColumn(env.prompt_length + u16::try_from(input.len()).unwrap()),
+                Clear(crossterm::terminal::ClearType::UntilNewLine),
+                SetForegroundColor(Color::Cyan),
+                Print(completion),
+                MoveToColumn(env.prompt_length + u16::try_from(input.len()).unwrap()),
+                ResetColor
+            )
+            .unwrap();
+        }
     }
     input
 }
@@ -192,7 +233,7 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
         }
         match cur_shared.cmp(&most_shared) {
             Ordering::Less => {
-                if number_of_shared == 0 {
+                if number_of_shared == 0 && most_shared != 0 {
                     return Some(&options[i - 1]);
                 } else {
                     return None;

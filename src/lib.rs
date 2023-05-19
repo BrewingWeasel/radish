@@ -43,6 +43,7 @@ pub enum Scope {
 #[derive(Debug)]
 pub struct Env {
     history: Vec<String>,
+    sorted_history: Vec<String>,
     commands: Vec<String>,
     prompt_length: u16,
     lists: HashMap<String, Vec<String>>,
@@ -72,8 +73,12 @@ pub fn run_radish() {
     let mut commands = get_all_commands();
     commands.sort_unstable();
     commands.dedup(); // Hacky workaround for when there are multiple of the same file name in path
+    let mut new_history = history.clone();
+    new_history.sort_unstable();
+    new_history.dedup();
     let mut env = Env {
         history,
+        sorted_history: new_history,
         commands,
         prompt_length: 3,
         lists: HashMap::new(),
