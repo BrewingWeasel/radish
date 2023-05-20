@@ -120,7 +120,12 @@ pub fn get_input(env: &mut crate::Env) -> String {
                     if x.modifiers.contains(KeyModifiers::CONTROL) {
                         // TODO: add ctrl delete
                     } else if input.pop().is_some() {
-                        execute!(stdout(), MoveLeft(1), Print(" "), MoveLeft(1)).unwrap()
+                        execute!(
+                            stdout(),
+                            MoveLeft(1),
+                            Clear(crossterm::terminal::ClearType::UntilNewLine)
+                        )
+                        .unwrap()
                     }
                 }
                 KeyCode::Right => {
@@ -221,6 +226,7 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
     }
     let mut most_shared = 0;
     let mut number_of_shared = 0;
+
     for (i, option) in options.iter().enumerate() {
         if option.as_str() == input {
             return None;
@@ -236,14 +242,33 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
                 if number_of_shared == 0 && most_shared != 0 {
                     return Some(&options[i - 1]);
                 } else {
-                    return None;
+                    let orig_to_share = &options[i - number_of_shared];
+                    let mut min_shared_count = orig_to_share.chars().count();
+                    for shared_index in 1..number_of_shared - 1 {
+                        let mut orig_shared_chars = orig_to_share.chars().take(min_shared_count);
+                        let mut new_shared_chars = options[i - shared_index].chars();
+                        let mut shared_count = 0;
+                        while orig_shared_chars.next() == new_shared_chars.next() {
+                            shared_count += 1;
+                        }
+                        if shared_count < min_shared_count {
+                            min_shared_count = shared_count;
+                        }
+                    }
+                    if min_shared_count >= most_shared {
+                        return Some(&orig_to_share[..min_shared_count]);
+                    } else {
+                        return None;
+                    }
                 }
             }
             Ordering::Greater => {
                 number_of_shared = 0;
                 most_shared = cur_shared;
             }
-            Ordering::Equal => number_of_shared += 1,
+            Ordering::Equal => {
+                number_of_shared += 1;
+            }
         }
     }
     None
