@@ -16,6 +16,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
         List,
         File,
     }
+
     let mut history_index = env.history.len();
     let mut input = String::new();
     let mut in_quotes = false;
@@ -27,6 +28,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
         .map(|x| Cow::Borrowed(x))
         .collect();
     let mut suggested_input: Option<&str> = None;
+
     loop {
         if let Event::Key(x) = read().unwrap() {
             match x.code {
@@ -91,10 +93,18 @@ pub fn get_input(env: &mut crate::Env) -> String {
                             get_backwards_until(&input, '%'),
                             env.lists.keys().map(Cow::Borrowed).collect(),
                         ),
-                        CompletionType::File => (
-                            get_backwards_until(&input, ' '),
-                            get_all_files().into_iter().map(Cow::Owned).collect(),
-                        ),
+                        CompletionType::File => {
+                            let file_name = get_backwards_until(&input, ' ');
+                            let folder = if let Some((f, _)) = file_name.rsplit_once('/') {
+                                f
+                            } else {
+                                "./"
+                            };
+                            (
+                                get_backwards_until(&input, ' '),
+                                get_all_files(folder).into_iter().map(Cow::Owned).collect(),
+                            )
+                        }
                     };
                     let new_cmd = suggest(&completing_values.0, &completing_values.1);
                     if let Some(completion) = new_cmd {
@@ -274,17 +284,12 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
     None
 }
 
-fn get_all_files() -> Vec<String> {
-    read_dir("./")
+fn get_all_files(dir: &str) -> Vec<String> {
+    read_dir(dir)
         .unwrap()
         .map(|p| {
-            p.unwrap()
-                .path()
-                .display()
-                .to_string()
-                .strip_prefix("./")
-                .unwrap()
-                .to_owned()
+            let path = p.unwrap().path().display().to_string();
+            path.strip_prefix("./").unwrap_or(&path).to_owned()
         })
         .collect()
 }
