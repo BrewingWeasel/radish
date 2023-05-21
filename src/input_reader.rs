@@ -10,7 +10,7 @@ use std::{borrow::Cow, cmp::Ordering, fs::read_dir, io::stdout};
 
 use crate::{exit, run_from_string};
 
-pub fn get_input(env: &mut crate::Env) -> String {
+pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Option<String>) {
     #[derive(Debug)]
     enum CompletionType {
         Command,
@@ -19,7 +19,8 @@ pub fn get_input(env: &mut crate::Env) -> String {
     }
 
     let mut history_index = env.history.len();
-    let mut input = String::new();
+    let mut input = next_cmd.unwrap_or(String::new());
+    execute!(stdout(), Print(&input)).unwrap();
     let mut in_quotes = false;
     let mut after_slash = false;
     let mut currently_completing = CompletionType::Command;
@@ -29,9 +30,13 @@ pub fn get_input(env: &mut crate::Env) -> String {
     loop {
         if let Event::Key(x) = read().unwrap() {
             let binding = env.bindings.get(&x);
-            if let Some(cmd) = binding {
+            if let Some((reset, cmd)) = binding {
                 let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
+                if *reset {
+                    execute!(stdout(), Print('\n')).unwrap();
+                    return (new_cmd, Some(input));
+                }
                 if let Err(e) = run_from_string(Cow::Owned(new_cmd), env, true, None) {
                     eprintln!("{e}");
                 }
@@ -111,6 +116,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
                             input.push(c);
                         }
                     }
+
                     KeyCode::Tab => {
                         let completing_values = match currently_completing {
                             CompletionType::Command => (
@@ -149,6 +155,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
                             );
                         }
                     }
+
                     KeyCode::Esc => {
                         exit(env);
                         unreachable!()
@@ -264,6 +271,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
                 }
             }
         }
+
         suggested_input = suggest(&input, &env.sorted_history);
         if let Some(mut completion) = suggested_input {
             completion = if let Some(completion) = completion.strip_prefix(&input) {
@@ -289,7 +297,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
             .unwrap();
         }
     }
-    input
+    (input, None)
 }
 
 fn get_backwards_until(input: &str, until: char) -> String {

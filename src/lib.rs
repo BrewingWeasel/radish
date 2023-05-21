@@ -51,7 +51,7 @@ pub struct Env<'a> {
     locations: HashMap<String, String>,
     aliases: HashMap<String, String>,
     functions: HashMap<String, String>,
-    bindings: HashMap<KeyEvent, String>,
+    bindings: HashMap<KeyEvent, (bool, String)>,
     shell_variables: HashMap<String, String>,
     continue_if: bool,
     scope: Scope,
@@ -65,6 +65,7 @@ fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn run_radish() {
+    let mut next_cmd = None;
     let mut history = vec![];
     if let Ok(file) = File::open(dirs::home_dir().unwrap().join(".radish_history")) {
         let lines = BufReader::new(file).lines();
@@ -121,7 +122,8 @@ pub fn run_radish() {
         print!("{}", prompt);
         stdout().flush().unwrap();
         enable_raw_mode().unwrap();
-        let input = input_reader::get_input(&mut env);
+        let (input, new_cmd) = input_reader::get_input(&mut env, next_cmd);
+        next_cmd = new_cmd;
         disable_raw_mode().unwrap();
         if input.is_empty() {
             continue;
@@ -354,7 +356,7 @@ fn run(
             Ok(None)
         }
         "bind" => {
-            bind(&mut env.bindings, args.first().unwrap())?;
+            bind(&mut env.bindings, args)?;
             Ok(None)
         }
         "export" => {
@@ -513,10 +515,22 @@ fn alias(aliases: &mut HashMap<String, String>, args: &str) {
     );
 }
 
-fn bind(aliases: &mut HashMap<KeyEvent, String>, args: &str) -> Result<(), Box<dyn Error>> {
-    let mut args = args.split(':');
+fn bind(
+    aliases: &mut HashMap<KeyEvent, (bool, String)>,
+    mut args: Vec<String>,
+) -> Result<(), Box<dyn Error>> {
+    let reset = if args[0] == "-x" {
+        args.remove(0);
+        true
+    } else {
+        false
+    };
+    let mut args = args[0].split(':');
     let keycode = args.next().ok_or(InvalidItemError)?;
-    aliases.insert(crokey::parse(keycode)?, args.next().unwrap().to_string());
+    aliases.insert(
+        crokey::parse(keycode)?,
+        (reset, args.next().unwrap().to_string()),
+    );
     Ok(())
 }
 
