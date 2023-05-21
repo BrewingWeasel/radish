@@ -213,6 +213,12 @@ pub fn get_input(env: &mut crate::Env) -> String {
                 ResetColor
             )
             .unwrap();
+        } else {
+            queue!(
+                stdout(),
+                Clear(crossterm::terminal::ClearType::UntilNewLine)
+            )
+            .unwrap();
         }
     }
     input
@@ -249,6 +255,9 @@ fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
         }
         match cur_shared.cmp(&most_shared) {
             Ordering::Less => {
+                if !options[i - 1].starts_with(input) {
+                    return None;
+                }
                 if number_of_shared == 0 && most_shared != 0 {
                     return Some(&options[i - 1]);
                 } else {
