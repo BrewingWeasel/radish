@@ -1,5 +1,5 @@
 use crossterm::{
-    cursor::{MoveLeft, MoveToColumn},
+    cursor::{MoveLeft, MoveRight, MoveToColumn},
     event::{read, Event, KeyCode, KeyModifiers},
     execute, queue,
     style::{Color, Print, ResetColor, SetForegroundColor},
@@ -28,6 +28,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
         .map(|x| Cow::Borrowed(x))
         .collect();
     let mut suggested_input: Option<&str> = None;
+    let mut chars_from_end: usize = 0;
 
     loop {
         if let Event::Key(x) = read().unwrap() {
@@ -35,7 +36,6 @@ pub fn get_input(env: &mut crate::Env) -> String {
                 KeyCode::Char(c) => {
                     if after_slash {
                         execute!(stdout(), Print(c), ResetColor).unwrap();
-                        input.push(c);
                         after_slash = false;
                         continue;
                     }
@@ -80,8 +80,31 @@ pub fn get_input(env: &mut crate::Env) -> String {
                         }
                         _ => (),
                     }
-                    execute!(stdout(), Print(c)).unwrap();
-                    input.push(c);
+                    if chars_from_end != 0 {
+                        input.insert(input.chars().count() - chars_from_end, c);
+                        if chars_from_end != 0 {
+                            execute!(
+                                stdout(),
+                                Print(c),
+                                Clear(crossterm::terminal::ClearType::UntilNewLine),
+                                Print(
+                                    input
+                                        .chars()
+                                        .rev()
+                                        .take(chars_from_end)
+                                        .collect::<String>()
+                                        .chars()
+                                        .rev()
+                                        .collect::<String>()
+                                ),
+                                MoveLeft(chars_from_end.try_into().unwrap())
+                            )
+                            .unwrap();
+                        }
+                    } else {
+                        execute!(stdout(), Print(c)).unwrap();
+                        input.push(c);
+                    }
                 }
                 KeyCode::Tab => {
                     let completing_values = match currently_completing {
@@ -129,18 +152,41 @@ pub fn get_input(env: &mut crate::Env) -> String {
                 KeyCode::Backspace => {
                     if x.modifiers.contains(KeyModifiers::CONTROL) {
                         // TODO: add ctrl delete
-                    } else if input.pop().is_some() {
-                        execute!(
-                            stdout(),
-                            MoveLeft(1),
-                            Clear(crossterm::terminal::ClearType::UntilNewLine)
-                        )
-                        .unwrap()
+                    } else {
+                        if chars_from_end == 0 {
+                            if input.pop().is_some() {
+                                execute!(
+                                    stdout(),
+                                    MoveLeft(1),
+                                    Clear(crossterm::terminal::ClearType::UntilNewLine),
+                                )
+                                .unwrap();
+                            }
+                        } else {
+                            input.remove(input.len() - chars_from_end);
+                            execute!(
+                                stdout(),
+                                MoveLeft(1),
+                                Clear(crossterm::terminal::ClearType::UntilNewLine),
+                                Print(
+                                    input
+                                        .chars()
+                                        .rev()
+                                        .take(chars_from_end)
+                                        .collect::<String>()
+                                        .chars()
+                                        .rev()
+                                        .collect::<String>()
+                                ),
+                                MoveLeft(chars_from_end.try_into().unwrap()),
+                            )
+                            .unwrap();
+                        }
                     }
                 }
                 KeyCode::Right => {
-                    if let Some(mut completion) = suggested_input {
-                        completion = completion.strip_prefix(&input).unwrap();
+                    if suggested_input.is_some() && chars_from_end == 0 {
+                        let completion = suggested_input.unwrap().strip_prefix(&input).unwrap();
                         execute!(
                             stdout(),
                             ResetColor,
@@ -150,6 +196,19 @@ pub fn get_input(env: &mut crate::Env) -> String {
                         )
                         .unwrap();
                         input.push_str(completion)
+                    } else {
+                        chars_from_end = if let Some(val) = chars_from_end.checked_sub(1) {
+                            execute!(stdout(), MoveRight(1)).unwrap();
+                            val
+                        } else {
+                            0
+                        }
+                    }
+                }
+                KeyCode::Left => {
+                    if chars_from_end < input.chars().count() {
+                        chars_from_end += 1;
+                        execute!(stdout(), MoveLeft(1)).unwrap();
                     }
                 }
                 KeyCode::Up => {
@@ -213,7 +272,7 @@ pub fn get_input(env: &mut crate::Env) -> String {
                 ResetColor
             )
             .unwrap();
-        } else {
+        } else if chars_from_end == 0 {
             queue!(
                 stdout(),
                 Clear(crossterm::terminal::ClearType::UntilNewLine)
