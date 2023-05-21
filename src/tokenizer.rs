@@ -475,7 +475,7 @@ fn check_for_new_line(
     chars: &mut Peekable<OwnedChars>,
     extra_lines: &mut Option<&mut Lines<BufReader<File>>>,
     add_semicolon: &bool,
-    contents: &mut Vec<String>,
+    contents: &mut [String],
 ) -> Result<Option<Peekable<OwnedChars>>, Box<dyn Error>> {
     if chars.peek().is_none() {
         let next_line = match extra_lines {
@@ -501,7 +501,7 @@ fn check_for_new_line(
     }
 }
 
-fn trim_block_keyword(keyword: &str, last_contents: &mut String) -> String {
+fn trim_block_keyword(keyword: &str, last_contents: &mut str) -> String {
     last_contents
         .strip_suffix(keyword)
         .unwrap()

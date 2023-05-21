@@ -29,9 +29,8 @@ pub fn get_input(env: &mut crate::Env) -> String {
     loop {
         if let Event::Key(x) = read().unwrap() {
             let binding = env.bindings.get(&x);
-            if binding.is_some() {
-                let new_cmd = binding.unwrap().to_owned();
-                drop(binding);
+            if let Some(cmd) = binding {
+                let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
                 if let Err(e) = run_from_string(Cow::Owned(new_cmd), env, true, None) {
                     eprintln!("{e}");
