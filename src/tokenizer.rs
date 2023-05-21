@@ -604,7 +604,7 @@ fn if_specific_parsing(
             _ => (),
         }
     }
-    return (ActionToTake::None, parsing_vars);
+    (ActionToTake::None, parsing_vars)
 }
 
 fn multiline_loop_parsing(

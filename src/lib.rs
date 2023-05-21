@@ -67,8 +67,8 @@ fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
 pub fn run_radish() {
     let mut history = vec![];
     if let Ok(file) = File::open(dirs::home_dir().unwrap().join(".radish_history")) {
-        let mut lines = BufReader::new(file).lines();
-        while let Some(line) = lines.next() {
+        let lines = BufReader::new(file).lines();
+        for line in lines {
             history.push(line.unwrap());
         }
     }
@@ -78,7 +78,7 @@ pub fn run_radish() {
     let mut new_history = history.clone();
     new_history.sort_unstable();
     new_history.dedup();
-    let sorted_history = new_history.iter().map(|x| Cow::Borrowed(x)).collect();
+    let sorted_history = new_history.iter().map(Cow::Borrowed).collect();
     let mut env = Env {
         history,
         sorted_history,

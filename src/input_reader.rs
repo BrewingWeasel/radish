@@ -161,36 +161,34 @@ pub fn get_input(env: &mut crate::Env) -> String {
                     KeyCode::Backspace => {
                         if x.modifiers.contains(KeyModifiers::CONTROL) {
                             // TODO: add ctrl delete
-                        } else {
-                            if chars_from_end == 0 {
-                                if input.pop().is_some() {
-                                    execute!(
-                                        stdout(),
-                                        MoveLeft(1),
-                                        Clear(crossterm::terminal::ClearType::UntilNewLine),
-                                    )
-                                    .unwrap();
-                                }
-                            } else {
-                                input.remove(input.len() - chars_from_end);
+                        } else if chars_from_end == 0 {
+                            if input.pop().is_some() {
                                 execute!(
                                     stdout(),
                                     MoveLeft(1),
                                     Clear(crossterm::terminal::ClearType::UntilNewLine),
-                                    Print(
-                                        input
-                                            .chars()
-                                            .rev()
-                                            .take(chars_from_end)
-                                            .collect::<String>()
-                                            .chars()
-                                            .rev()
-                                            .collect::<String>()
-                                    ),
-                                    MoveLeft(chars_from_end.try_into().unwrap()),
                                 )
                                 .unwrap();
                             }
+                        } else {
+                            input.remove(input.len() - chars_from_end);
+                            execute!(
+                                stdout(),
+                                MoveLeft(1),
+                                Clear(crossterm::terminal::ClearType::UntilNewLine),
+                                Print(
+                                    input
+                                        .chars()
+                                        .rev()
+                                        .take(chars_from_end)
+                                        .collect::<String>()
+                                        .chars()
+                                        .rev()
+                                        .collect::<String>()
+                                ),
+                                MoveLeft(chars_from_end.try_into().unwrap()),
+                            )
+                            .unwrap();
                         }
                     }
                     KeyCode::Right => {
