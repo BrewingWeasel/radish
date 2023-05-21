@@ -1,3 +1,4 @@
+extern crate crokey;
 extern crate glob;
 extern crate owned_chars;
 extern crate strip_ansi_escapes;

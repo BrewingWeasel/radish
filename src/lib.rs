@@ -1,5 +1,6 @@
-use crossterm::{
+use crokey::crossterm::{
     cursor::MoveToColumn,
+    event::KeyEvent,
     execute,
     style::Print,
     terminal::{disable_raw_mode, enable_raw_mode},
@@ -41,15 +42,16 @@ pub enum Scope {
 }
 
 #[derive(Debug)]
-pub struct Env {
+pub struct Env<'a> {
     history: Vec<String>,
-    sorted_history: Vec<String>,
+    sorted_history: Vec<Cow<'a, String>>,
     commands: Vec<String>,
     prompt_length: u16,
     lists: HashMap<String, Vec<String>>,
     locations: HashMap<String, String>,
     aliases: HashMap<String, String>,
     functions: HashMap<String, String>,
+    bindings: HashMap<KeyEvent, String>,
     shell_variables: HashMap<String, String>,
     continue_if: bool,
     scope: Scope,
@@ -76,15 +78,17 @@ pub fn run_radish() {
     let mut new_history = history.clone();
     new_history.sort_unstable();
     new_history.dedup();
+    let sorted_history = new_history.iter().map(|x| Cow::Borrowed(x)).collect();
     let mut env = Env {
         history,
-        sorted_history: new_history,
+        sorted_history,
         commands,
         prompt_length: 3,
         lists: HashMap::new(),
         functions: HashMap::new(),
         locations: HashMap::new(),
         aliases: HashMap::new(),
+        bindings: HashMap::new(),
         shell_variables: HashMap::new(),
         continue_if: false,
         scope: Scope::Main,
@@ -349,6 +353,10 @@ fn run(
             alias(&mut env.aliases, args.first().unwrap());
             Ok(None)
         }
+        "bind" => {
+            bind(&mut env.bindings, args.first().unwrap())?;
+            Ok(None)
+        }
         "export" => {
             export(args.first().unwrap());
             Ok(None)
@@ -503,6 +511,13 @@ fn alias(aliases: &mut HashMap<String, String>, args: &str) {
         args.next().unwrap().to_string(),
         args.next().unwrap().to_string(),
     );
+}
+
+fn bind(aliases: &mut HashMap<KeyEvent, String>, args: &str) -> Result<(), Box<dyn Error>> {
+    let mut args = args.split(':');
+    let keycode = args.next().ok_or(InvalidItemError)?;
+    aliases.insert(crokey::parse(keycode)?, args.next().unwrap().to_string());
+    Ok(())
 }
 
 pub fn get_all_commands() -> Vec<String> {
