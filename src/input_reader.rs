@@ -258,6 +258,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                                 Clear(crossterm::terminal::ClearType::UntilNewLine),
                             )
                             .unwrap();
+                            input = String::new();
                         }
                     }
                     _ => (),
