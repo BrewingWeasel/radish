@@ -310,7 +310,23 @@ pub fn parse_input(
                             .by_ref()
                             .take_while(|x| *x != '\n' && *x != ' ')
                             .collect::<String>();
-                        last_str.push_str(env.locations.get(&name).ok_or(crate::InvalidItemError)?)
+                        let loc_val = if let Some(l) = env.locations.get(&name) {
+                            Ok(l)
+                        } else {
+                            let mut dir_selected = None;
+                            for dir_name in &env.dirs {
+                                let ending_name = format!("/{}", name);
+                                if dir_name.ends_with(&ending_name) {
+                                    dir_selected = Some(dir_name);
+                                }
+                            }
+                            if let Some(dir) = dir_selected {
+                                Ok(dir)
+                            } else {
+                                Err(crate::InvalidItemError)
+                            }
+                        }?;
+                        last_str.push_str(loc_val);
                     }
                     '*' => {
                         currently_tokenizing = CurrentlyTokenizing::GlobPattern;
