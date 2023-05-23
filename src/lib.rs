@@ -44,6 +44,7 @@ pub enum Scope {
 #[derive(Debug)]
 pub struct Env<'a> {
     history: Vec<String>,
+    dirs: Vec<String>,
     sorted_history: Vec<Cow<'a, String>>,
     commands: Vec<String>,
     prompt_length: u16,
@@ -64,15 +65,25 @@ fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub fn run_radish() {
-    let mut next_cmd = None;
+fn get_conts_from_file(dir: PathBuf) -> Vec<String> {
     let mut history = vec![];
-    if let Ok(file) = File::open(dirs::home_dir().unwrap().join(".radish_history")) {
+    if let Ok(file) = File::open(dir) {
         let lines = BufReader::new(file).lines();
         for line in lines {
             history.push(line.unwrap());
         }
+        history
+    } else {
+        vec![]
     }
+}
+
+pub fn run_radish() {
+    let mut next_cmd = None;
+
+    let history = get_conts_from_file(dirs::home_dir().unwrap().join(".radish_history"));
+    let mut dirs = get_conts_from_file(dirs::home_dir().unwrap().join(".radish_dirs"));
+    dirs.push(current_dir().unwrap().display().to_string());
     let mut commands = get_all_commands();
     commands.sort_unstable();
     commands.dedup(); // Hacky workaround for when there are multiple of the same file name in path
@@ -80,10 +91,12 @@ pub fn run_radish() {
     new_history.sort_unstable();
     new_history.dedup();
     let sorted_history = new_history.iter().map(Cow::Borrowed).collect();
+
     let mut env = Env {
         history,
         sorted_history,
         commands,
+        dirs,
         prompt_length: 3,
         lists: HashMap::new(),
         functions: HashMap::new(),
@@ -96,10 +109,6 @@ pub fn run_radish() {
     };
     env.shell_variables
         .insert(String::from("?"), String::from("0"));
-    env.shell_variables.insert(
-        String::from("DIRS"),
-        current_dir().unwrap().display().to_string(),
-    );
     let mut args = args().peekable();
     args.next();
     if args.peek() == Some(&String::from("-e")) {
@@ -343,10 +352,7 @@ fn run(
     // struct for this
     match command {
         "cd" => {
-            cd(
-                args,
-                &mut env.shell_variables.get_mut(&String::from("DIRS")).unwrap(),
-            );
+            cd(args, &mut env.dirs);
             Ok(None)
         }
         "" => Ok(None),
@@ -384,6 +390,7 @@ fn run(
             mkloc(&mut env.functions, args);
             Ok(None)
         }
+        "dirs" => dirs(env, stdin, stdout),
         "exit" => {
             exit(env);
             unreachable!()
@@ -421,36 +428,53 @@ fn run(
     }
 }
 
-pub fn exit(env: &mut Env) {
+fn dirs(env: &Env, stdin: Stdio, stdout: Stdio) -> Result<Option<Child>, Box<dyn Error>> {
+    let new_dirs = vec![env.dirs.join("\n")];
+    match Command::new("echo") // Hacky workaround so it can be piped
+        .args(new_dirs)
+        .stdin(stdin)
+        .stdout(stdout)
+        .spawn()
+    {
+        Ok(output) => Ok(Some(output)),
+        Err(e) => {
+            eprintln!("Error running dirs: {e}");
+            Ok(None)
+        }
+    }
+}
+
+fn write_to_file(file_name: &str, conts: &Vec<String>) {
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
-        .open(dirs::home_dir().unwrap().join(".radish_history"))
+        .open(dirs::home_dir().unwrap().join(file_name))
         .unwrap();
-    for i in &env.history {
+    for i in conts {
         file.write(format!("{i}\n").as_bytes())
             .expect("Error writing to history on exit");
     }
+}
+
+pub fn exit(env: &mut Env) {
+    write_to_file(".radish_history", &env.history);
+    write_to_file(".radish_dirs", &env.dirs);
     process::exit(0);
 }
 
-fn cd(args: Vec<String>, orig_dirs: &mut String) {
-    let dirs: Vec<&str> = orig_dirs.lines().collect();
+fn cd(args: Vec<String>, orig_dirs: &mut Vec<String>) {
     let newdir = match args.first() {
         None => dirs::home_dir().unwrap(),
         Some(dir) => {
             if dir == "-" {
-                Path::new(dirs.get(dirs.len() - 2).unwrap()).into()
+                Path::new(orig_dirs.get(orig_dirs.len() - 2).unwrap()).into()
             } else {
                 Path::new(dir).into()
             }
         }
     };
     env::set_current_dir(newdir).expect("Error setting dir");
-    orig_dirs.push_str(&format!(
-        "\n{}",
-        &current_dir().unwrap().display().to_string()
-    ));
+    orig_dirs.push(current_dir().unwrap().display().to_string())
 }
 
 fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
