@@ -8,7 +8,7 @@ use crokey::crossterm::{
 use std::{
     borrow::Cow,
     collections::HashMap,
-    env::{self, args},
+    env::{self, args, current_dir},
     error::Error,
     fs::{read_dir, File, OpenOptions},
     io::{stdout, BufRead, BufReader, Lines, Write},
@@ -96,6 +96,10 @@ pub fn run_radish() {
     };
     env.shell_variables
         .insert(String::from("?"), String::from("0"));
+    env.shell_variables.insert(
+        String::from("DIRS"),
+        current_dir().unwrap().display().to_string(),
+    );
     let mut args = args().peekable();
     args.next();
     if args.peek() == Some(&String::from("-e")) {
@@ -111,6 +115,12 @@ pub fn run_radish() {
         eprintln!("{e}");
     };
     loop {
+        if let Some(func) = env.functions.get("radish_eval_on_new") {
+            let new_func = func.to_owned();
+            if let Err(e) = exec_function(&mut env, &new_func) {
+                eprintln!("{e}");
+            };
+        };
         execute!(stdout(), MoveToColumn(0)).unwrap();
         let prompt = unescape(env::var("PS1").unwrap_or("~> ".to_string()));
         let stripped_prompt = strip_ansi_escapes::strip(prompt.lines().last().unwrap());
@@ -333,7 +343,10 @@ fn run(
     // struct for this
     match command {
         "cd" => {
-            cd(args);
+            cd(
+                args,
+                &mut env.shell_variables.get_mut(&String::from("DIRS")).unwrap(),
+            );
             Ok(None)
         }
         "" => Ok(None),
@@ -389,17 +402,7 @@ fn run(
         }
         command => {
             if let Some(contents) = env.functions.get(command) {
-                let new_contents = contents
-                    .strip_prefix('{')
-                    .unwrap()
-                    .trim_matches(';')
-                    .strip_suffix('}')
-                    .unwrap()
-                    .to_string();
-                env.scope = Scope::Function;
-                let last_cmd = run_from_string(Cow::Borrowed(&new_contents), env, true, None)?;
-                env.scope = Scope::Main;
-                Ok(last_cmd)
+                exec_function(env, &contents.to_owned())
             } else {
                 match Command::new(command)
                     .args(args)
@@ -431,12 +434,23 @@ pub fn exit(env: &mut Env) {
     process::exit(0);
 }
 
-fn cd(args: Vec<String>) {
+fn cd(args: Vec<String>, orig_dirs: &mut String) {
+    let dirs: Vec<&str> = orig_dirs.lines().collect();
     let newdir = match args.first() {
         None => dirs::home_dir().unwrap(),
-        Some(dir) => Path::new(dir).into(),
+        Some(dir) => {
+            if dir == "-" {
+                Path::new(dirs.get(dirs.len() - 2).unwrap()).into()
+            } else {
+                Path::new(dir).into()
+            }
+        }
     };
     env::set_current_dir(newdir).expect("Error setting dir");
+    orig_dirs.push_str(&format!(
+        "\n{}",
+        &current_dir().unwrap().display().to_string()
+    ));
 }
 
 fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
@@ -568,4 +582,18 @@ fn unescape(mut input: String) -> String {
         input = input.replace(replacement.0, replacement.1);
     }
     input
+}
+
+fn exec_function(env: &mut Env, contents: &String) -> Result<Option<Child>, Box<dyn Error>> {
+    let new_contents = contents
+        .strip_prefix('{')
+        .unwrap()
+        .trim_matches(';')
+        .strip_suffix('}')
+        .unwrap()
+        .to_string();
+    env.scope = Scope::Function;
+    let last_cmd = run_from_string(Cow::Borrowed(&new_contents), env, true, None)?;
+    env.scope = Scope::Main;
+    Ok(last_cmd)
 }
