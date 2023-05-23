@@ -46,6 +46,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                     KeyCode::Char(c) => {
                         if after_slash {
                             execute!(stdout(), Print(c), ResetColor).unwrap();
+                            input.push(c);
                             after_slash = false;
                             continue;
                         }
@@ -74,18 +75,10 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                             }
                             '|' => {
                                 if !in_quotes {
-                                    execute!(
-                                        stdout(),
-                                        SetForegroundColor(Color::Cyan),
-                                        Print("|"),
-                                        ResetColor
-                                    )
-                                    .unwrap();
-                                    input.push(c);
+                                    queue!(stdout(), SetForegroundColor(Color::Cyan)).unwrap();
                                     currently_completing = CompletionType::Command;
                                     // TODO: clean up, change name or stmh
                                     after_slash = true;
-                                    continue;
                                 }
                             }
                             _ => (),
