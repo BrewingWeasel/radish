@@ -44,8 +44,10 @@ pub enum Scope {
 #[derive(Debug)]
 pub struct Env<'a> {
     history: Vec<String>,
-    dirs: Vec<String>,
     sorted_history: Vec<Cow<'a, String>>,
+    dirs: Vec<String>,
+    sorted_dirs: Vec<String>,
+    dirs_up_to_date: bool,
     commands: Vec<String>,
     prompt_length: u16,
     lists: HashMap<String, Vec<String>>,
@@ -87,16 +89,23 @@ pub fn run_radish() {
     let mut commands = get_all_commands();
     commands.sort_unstable();
     commands.dedup(); // Hacky workaround for when there are multiple of the same file name in path
+
     let mut new_history = history.clone();
     new_history.sort_unstable();
     new_history.dedup();
     let sorted_history = new_history.iter().map(Cow::Borrowed).collect();
+
+    let mut sorted_dirs = dirs.clone();
+    sorted_dirs.sort_unstable();
+    sorted_dirs.dedup();
 
     let mut env = Env {
         history,
         sorted_history,
         commands,
         dirs,
+        sorted_dirs,
+        dirs_up_to_date: true,
         prompt_length: 3,
         lists: HashMap::new(),
         functions: HashMap::new(),
@@ -352,7 +361,7 @@ fn run(
     // struct for this
     match command {
         "cd" => {
-            cd(args, &mut env.dirs);
+            cd(args, env)?;
             Ok(None)
         }
         "" => Ok(None),
@@ -462,19 +471,24 @@ pub fn exit(env: &mut Env) {
     process::exit(0);
 }
 
-fn cd(args: Vec<String>, orig_dirs: &mut Vec<String>) {
+fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
     let newdir = match args.first() {
         None => dirs::home_dir().unwrap(),
         Some(dir) => {
             if dir == "-" {
-                Path::new(orig_dirs.get(orig_dirs.len() - 2).unwrap()).into()
+                Path::new(env.dirs.get(env.dirs.len() - 2).unwrap()).into()
             } else {
                 Path::new(dir).into()
             }
         }
     };
-    env::set_current_dir(newdir).expect("Error setting dir");
-    orig_dirs.push(current_dir().unwrap().display().to_string())
+    env::set_current_dir(newdir)?;
+    let new_dir_name = current_dir().unwrap().display().to_string();
+    if !env.sorted_dirs.contains(&new_dir_name) {
+        env.dirs_up_to_date = false;
+    }
+    env.dirs.push(new_dir_name);
+    Ok(())
 }
 
 fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {

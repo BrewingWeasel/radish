@@ -313,11 +313,24 @@ pub fn parse_input(
                         let loc_val = if let Some(l) = env.locations.get(&name) {
                             Ok(l)
                         } else {
+                            if !env.dirs_up_to_date {
+                                let mut new_dirs = env.dirs.clone();
+                                new_dirs.sort_unstable();
+                                new_dirs.dedup();
+                                env.sorted_dirs = new_dirs;
+                            } else {
+                            }
                             let mut dir_selected = None;
-                            for dir_name in &env.dirs {
+                            let mut has_selection_been_made = false;
+                            for dir_name in &env.sorted_dirs {
                                 let ending_name = format!("/{}", name);
                                 if dir_name.ends_with(&ending_name) {
-                                    dir_selected = Some(dir_name);
+                                    if has_selection_been_made {
+                                        dir_selected = None;
+                                    } else {
+                                        dir_selected = Some(dir_name);
+                                        has_selection_been_made = true;
+                                    }
                                 }
                             }
                             if let Some(dir) = dir_selected {
