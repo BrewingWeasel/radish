@@ -406,16 +406,28 @@ pub fn parse_input(
                                 .unwrap()
                                 .push(CommandPart::ToFile((String::new(), false)));
                         }
-                        if chars.next() == Some('>') {
-                            if let CommandPart::ToFile(options) =
-                                commands.last_mut().unwrap().last_mut().unwrap()
-                            {
-                                options.1 = true;
-                            } else if let CommandPart::ToFileStderr(options) =
-                                commands.last_mut().unwrap().last_mut().unwrap()
-                            {
-                                options.1 = true;
+                        match chars.next() {
+                            Some('>') => {
+                                if let CommandPart::ToFile(options) =
+                                    commands.last_mut().unwrap().last_mut().unwrap()
+                                {
+                                    options.1 = true;
+                                } else if let CommandPart::ToFileStderr(options) =
+                                    commands.last_mut().unwrap().last_mut().unwrap()
+                                {
+                                    options.1 = true;
+                                }
                             }
+                            Some('!') => {
+                                let val = match commands.last_mut().unwrap().last_mut().unwrap() {
+                                    CommandPart::ToFile((name, _)) => name,
+                                    CommandPart::ToFileStderr((name, _)) => name,
+                                    _ => unreachable!(),
+                                };
+                                *val = String::from("/dev/null");
+                                continue;
+                            }
+                            _ => (),
                         }
                         commandpart_index += 1;
                         current_token_index = 1;
