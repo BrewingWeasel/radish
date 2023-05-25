@@ -237,6 +237,7 @@ fn run_input(
     while let Some(input) = commands_iter.next() {
         last_command = None;
         for token_index in 0..input.len() {
+            let mut stderr = Stdio::piped();
             match input.get(token_index).unwrap() {
                 CommandPart::Command(_) => (),
                 CommandPart::Or => {
@@ -283,6 +284,25 @@ fn run_input(
                                     .open(file_name)?,
                             )
                         }
+                    }
+                    CommandPart::ToFileStderr((file_name, append)) => {
+                        stderr = if *append {
+                            Stdio::from(
+                                OpenOptions::new()
+                                    .append(true)
+                                    .create(true)
+                                    .open(file_name)?,
+                            )
+                        } else {
+                            Stdio::from(
+                                OpenOptions::new()
+                                    .write(true)
+                                    .create(true)
+                                    .truncate(true)
+                                    .open(file_name)?,
+                            )
+                        };
+                        Stdio::inherit()
                     }
                     CommandPart::FromFile(_) | CommandPart::Or | CommandPart::And => {
                         Stdio::inherit()
@@ -331,7 +351,7 @@ fn run_input(
             };
             let command = tokens.remove(0);
 
-            last_command = run(&command, tokens.to_vec(), stdout, stdin, env)?;
+            last_command = run(&command, tokens.to_vec(), stdout, stdin, stderr, env)?;
         }
         if let Some(mut cmd) = last_command {
             env.shell_variables.insert(
@@ -355,6 +375,7 @@ fn run(
     args: Vec<String>,
     stdout: Stdio,
     stdin: Stdio,
+    stderr: Stdio,
     env: &mut Env,
 ) -> Result<Option<Child>, Box<dyn Error>> {
     // TODO: probably make there be a
@@ -424,6 +445,8 @@ fn run(
                     .args(args)
                     .stdin(stdin)
                     .stdout(stdout)
+                    .stderr(stderr)
+                    // .stderr(Stdio::null())
                     .spawn()
                 {
                     Ok(output) => Ok(Some(output)),
@@ -512,7 +535,14 @@ fn if_statement(env: &mut Env, mut args: Vec<String>) -> Result<Option<Child>, B
         }
         cmd => cmd.to_string(),
     };
-    if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
+    if let Some(mut child) = run(
+        &cmd,
+        args,
+        Stdio::null(),
+        Stdio::null(),
+        Stdio::inherit(),
+        env,
+    )? {
         env.continue_if = child.wait()?.success();
         Ok(Some(child))
     } else {
@@ -523,7 +553,14 @@ fn elif_statement(env: &mut Env, mut args: Vec<String>) -> Result<Option<Child>,
     let cmd = args.remove(0);
     if env.continue_if {
         env.continue_if = false;
-    } else if let Some(mut child) = run(&cmd, args, Stdio::null(), Stdio::null(), env)? {
+    } else if let Some(mut child) = run(
+        &cmd,
+        args,
+        Stdio::null(),
+        Stdio::null(),
+        Stdio::inherit(),
+        env,
+    )? {
         env.continue_if = child.wait()?.success();
         return Ok(Some(child));
     }

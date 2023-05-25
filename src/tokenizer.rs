@@ -14,6 +14,7 @@ use std::{
 pub enum CommandPart {
     Command(Vec<String>),
     ToFile((String, bool)),
+    ToFileStderr((String, bool)),
     FromFile(String),
     Or,
     And,
@@ -168,6 +169,7 @@ pub fn parse_input(
         let last_str = match commands.last_mut().unwrap().last_mut().unwrap() {
             CommandPart::Command(args) => args.last_mut().unwrap(),
             CommandPart::ToFile((name, _)) => name,
+            CommandPart::ToFileStderr((name, _)) => name,
             CommandPart::FromFile(name) => name,
             _ => unreachable!(),
         };
@@ -388,12 +390,28 @@ pub fn parse_input(
                         }
                     }
                     '>' => {
-                        commands
-                            .last_mut()
-                            .unwrap()
-                            .push(CommandPart::ToFile((String::new(), false)));
+                        if last_str.ends_with('2') {
+                            let cur_commands = commands.last_mut().unwrap();
+                            cur_commands
+                                .last_mut()
+                                .unwrap()
+                                .unwrap_command_mut()
+                                .last_mut()
+                                .unwrap()
+                                .pop();
+                            cur_commands.push(CommandPart::ToFileStderr((String::new(), false)));
+                        } else {
+                            commands
+                                .last_mut()
+                                .unwrap()
+                                .push(CommandPart::ToFile((String::new(), false)));
+                        }
                         if chars.next() == Some('>') {
                             if let CommandPart::ToFile(options) =
+                                commands.last_mut().unwrap().last_mut().unwrap()
+                            {
+                                options.1 = true;
+                            } else if let CommandPart::ToFileStderr(options) =
                                 commands.last_mut().unwrap().last_mut().unwrap()
                             {
                                 options.1 = true;
