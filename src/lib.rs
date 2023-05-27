@@ -59,6 +59,7 @@ pub struct Env<'a> {
     continue_if: bool,
     scope: Scope,
 }
+
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     let mut lines = BufReader::new(File::open(path)?).lines();
     while let Some(line) = lines.next() {

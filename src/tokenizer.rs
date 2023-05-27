@@ -45,15 +45,18 @@ pub struct TokenizedOutput {
     pub variable_assignment: Option<(String, String)>,
 }
 
+#[derive(Debug)]
 enum ListType {
     Regular,
     GlobbedList,
 }
 
+#[derive(Debug)]
 enum CurrentlyTokenizing {
     Arg,
     GlobPattern,
-    List(ListType),
+    List(ListType, Option<Vec<String>>),
+    InlineList(Vec<String>),
     VariableAssignment(usize),
     Function,
 }
@@ -92,24 +95,28 @@ pub fn parse_input(
                         }
                     }
                 }
-                CurrentlyTokenizing::List(list_type) => {
+                CurrentlyTokenizing::List(list_type, list_conts) => {
                     let mut new_replacement = vec![];
                     let last_cmd = commands.last_mut().unwrap().last_mut().unwrap();
                     let last_str = last_cmd.unwrap_command_mut().pop().unwrap();
                     last_cmd.unwrap_command_mut().push(String::new());
                     for pattern in replacement {
                         let list_with_replacements: Vec<String> =
-                            if matches!(list_type, ListType::GlobbedList) {
-                                let mut paths: Vec<String> = vec![];
-                                for i in glob(&last_str)? {
-                                    paths.push(i?.display().to_string());
-                                }
-                                paths
+                            if let Some(ref conts) = list_conts {
+                                conts.to_owned()
                             } else {
-                                env.lists
-                                    .get(&last_str)
-                                    .ok_or(crate::InvalidItemError)?
-                                    .to_vec()
+                                if matches!(list_type, ListType::GlobbedList) {
+                                    let mut paths: Vec<String> = vec![];
+                                    for i in glob(&last_str)? {
+                                        paths.push(i?.display().to_string());
+                                    }
+                                    paths
+                                } else {
+                                    env.lists
+                                        .get(&last_str)
+                                        .ok_or(crate::InvalidItemError)?
+                                        .to_vec()
+                                }
                             };
                         for item in list_with_replacements {
                             let mut replacement_pattern = pattern.clone();
@@ -354,8 +361,40 @@ pub fn parse_input(
                         } else {
                             ListType::Regular
                         };
-                        currently_tokenizing = CurrentlyTokenizing::List(is_glob_list);
+                        currently_tokenizing = CurrentlyTokenizing::List(is_glob_list, None);
                         continue;
+                    }
+                    '{' => {
+                        currently_tokenizing = CurrentlyTokenizing::InlineList(vec![]);
+                    }
+                    ',' => {
+                        if let CurrentlyTokenizing::InlineList(ref mut list) = currently_tokenizing
+                        {
+                            let cmds = commands
+                                .last_mut()
+                                .unwrap()
+                                .last_mut()
+                                .unwrap()
+                                .unwrap_command_mut();
+                            let val = cmds.pop().unwrap();
+                            list.push(val);
+                            cmds.push(String::new());
+                        }
+                    }
+                    '}' => {
+                        if let CurrentlyTokenizing::InlineList(mut list) = currently_tokenizing {
+                            let cmds = commands
+                                .last_mut()
+                                .unwrap()
+                                .last_mut()
+                                .unwrap()
+                                .unwrap_command_mut();
+                            let val = cmds.pop().unwrap();
+                            list.push(val);
+                            cmds.push(String::new());
+                            currently_tokenizing =
+                                CurrentlyTokenizing::List(ListType::Regular, Some(list));
+                        }
                     }
                     '&' => {
                         current_token_index += 1;
