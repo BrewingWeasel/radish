@@ -254,10 +254,21 @@ pub fn parse_input(
                     }
                 }
                 '\\' => {
-                    if ['"', ' ', '$', '~', '*', '@', '%', '&', '\\']
-                        .contains(chars.peek().ok_or("No character after \\!")?)
-                    {
-                        last_str.push(chars.next().unwrap());
+                    if let Some(c) = chars.peek() {
+                        if ['"', ' ', '$', '~', '*', '@', '%', '&', '\\'].contains(c) {
+                            last_str.push(chars.next().unwrap());
+                            continue;
+                        }
+                    } else {
+                        let next_line = match extra_lines {
+                            Some(ref mut lines) => {
+                                lines.next().ok_or("Expected another line")?.unwrap()
+                            }
+                            None => {
+                                return Err("Expected more input".into());
+                            }
+                        };
+                        chars = OwnedChars::from_string(next_line).peekable();
                         continue;
                     }
                 }
