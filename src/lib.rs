@@ -11,7 +11,7 @@ use std::{
     env::{self, args, current_dir},
     error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stdout, BufRead, BufReader, Lines, Write},
+    io::{stdin, stdout, BufRead, BufReader, Lines, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
     str::from_utf8,
@@ -421,7 +421,8 @@ fn run(
             mkloc(&mut env.functions, args);
             Ok(None)
         }
-        "dirs" => dirs(env, stdin, stdout),
+        "dirs" => dirs(env, stdin, stdout, stderr),
+        "read" => read(stdin, stdout, stderr),
         "exit" => {
             exit(env);
             unreachable!()
@@ -461,12 +462,17 @@ fn run(
     }
 }
 
-fn dirs(env: &Env, stdin: Stdio, stdout: Stdio) -> Result<Option<Child>, Box<dyn Error>> {
-    let new_dirs = vec![env.dirs.join("\n")];
+fn fake_stdout(
+    stdin: Stdio,
+    stdout: Stdio,
+    stderr: Stdio,
+    output: String,
+) -> Result<Option<Child>, Box<dyn Error>> {
     match Command::new("echo") // Hacky workaround so it can be piped
-        .args(new_dirs)
+        .args(vec![output])
         .stdin(stdin)
         .stdout(stdout)
+        .stderr(stderr)
         .spawn()
     {
         Ok(output) => Ok(Some(output)),
@@ -475,6 +481,21 @@ fn dirs(env: &Env, stdin: Stdio, stdout: Stdio) -> Result<Option<Child>, Box<dyn
             Ok(None)
         }
     }
+}
+
+fn dirs(
+    env: &Env,
+    stdin: Stdio,
+    stdout: Stdio,
+    stderr: Stdio,
+) -> Result<Option<Child>, Box<dyn Error>> {
+    fake_stdout(stdin, stdout, stderr, env.dirs.join("\n"))
+}
+
+fn read(stdin: Stdio, stdout: Stdio, stderr: Stdio) -> Result<Option<Child>, Box<dyn Error>> {
+    let mut buffer = String::new();
+    std::io::stdin().read_line(&mut buffer)?;
+    fake_stdout(stdin, stdout, stderr, buffer)
 }
 
 fn write_to_file(file_name: &str, conts: &Vec<String>) {
