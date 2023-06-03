@@ -20,7 +20,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
 
     let mut history_index = env.history.len();
     let mut input = next_cmd.unwrap_or(String::new());
-    execute!(stdout(), Print(&input)).unwrap();
+    execute!(stdout(), Print(&input),).unwrap();
     let mut in_quotes = false;
     let mut after_slash = false;
     let mut currently_completing = CompletionType::Command;

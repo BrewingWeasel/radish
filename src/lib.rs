@@ -11,12 +11,12 @@ use std::{
     env::{self, args, current_dir},
     error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stdout, BufRead, BufReader, Lines, Write},
+    io::{stdout, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
     str::from_utf8,
 };
-use tokenizer::{CommandPart, TokenizedOutput};
+use tokenizer::{CommandPart, ExtraLines, TokenizedOutput};
 
 mod input_reader;
 mod tokenizer;
@@ -63,7 +63,12 @@ pub struct Env<'a> {
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
     let mut lines = BufReader::new(File::open(path)?).lines();
     while let Some(line) = lines.next() {
-        run_from_string(Cow::Borrowed(&line.unwrap()), env, true, Some(&mut lines))?;
+        run_from_string(
+            Cow::Borrowed(&line.unwrap()),
+            env,
+            true,
+            Some(&mut ExtraLines::File(&mut lines)),
+        )?;
     }
     Ok(())
 }
@@ -157,7 +162,12 @@ pub fn run_radish() {
         if input.is_empty() {
             continue;
         }
-        if let Err(e) = run_from_string(Cow::Borrowed(&input), &mut env, true, None) {
+        if let Err(e) = run_from_string(
+            Cow::Borrowed(&input),
+            &mut env,
+            true,
+            Some(&mut ExtraLines::Stdin),
+        ) {
             eprintln!("{}", e);
         }
         env.history.push(input);
@@ -168,7 +178,7 @@ fn run_from_string(
     input: Cow<String>,
     env: &mut Env,
     output: bool,
-    extra_lines: Option<&mut Lines<BufReader<File>>>,
+    extra_lines: Option<&mut ExtraLines>,
 ) -> Result<Option<Child>, Box<dyn Error>> {
     if input.is_empty() || input.starts_with('#') {
         return Ok(None);

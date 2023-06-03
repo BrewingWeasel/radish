@@ -1,3 +1,8 @@
+use crokey::crossterm::{
+    cursor::MoveToColumn,
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use glob::glob;
 use owned_chars::OwnedChars;
 use std::{
@@ -5,9 +10,11 @@ use std::{
     env,
     error::Error,
     fs::File,
-    io::{BufReader, Lines, Read},
+    io::{stdout, BufReader, Lines, Read},
     iter::Peekable,
 };
+
+use crate::input_reader::get_input;
 
 // TODO: come up with a better name
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,11 +68,37 @@ enum CurrentlyTokenizing {
     Function,
 }
 
+pub enum ExtraLines<'a> {
+    File(&'a mut Lines<BufReader<File>>),
+    Stdin,
+}
+
+impl ExtraLines<'_> {
+    pub fn next_line(&mut self, env: &mut crate::Env) -> Option<String> {
+        match self {
+            Self::Stdin => {
+                enable_raw_mode().unwrap();
+                execute!(stdout(), MoveToColumn(env.prompt_length)).unwrap();
+                let (input, _) = get_input(env, None);
+                disable_raw_mode().unwrap();
+                if input.is_empty() {
+                    return None;
+                }
+                Some(input)
+            }
+            Self::File(ref mut lines) => match lines.next() {
+                Some(Ok(a)) => Some(a),
+                _ => None,
+            },
+        }
+    }
+}
+
 // TODO: Clean up
 pub fn parse_input(
     input: &str,
     env: &mut crate::Env,
-    mut extra_lines: Option<&mut Lines<BufReader<File>>>,
+    mut extra_lines: Option<&mut ExtraLines>,
 ) -> Result<TokenizedOutput, Box<dyn Error>> {
     let mut in_quotes = false;
     let mut variable_assignment = None;
@@ -149,8 +182,12 @@ pub fn parse_input(
                     continue;
                 }
                 CurrentlyTokenizing::Function => {
-                    let (contents, new_chars) =
-                        multiline_loop_parsing(chars, &mut extra_lines, func_specific_parsing)?;
+                    let (contents, new_chars) = multiline_loop_parsing(
+                        env,
+                        chars,
+                        &mut extra_lines,
+                        func_specific_parsing,
+                    )?;
                     chars = new_chars;
                     if let CommandPart::Command(cmd) =
                         commands.last_mut().unwrap().last_mut().unwrap()
@@ -181,7 +218,7 @@ pub fn parse_input(
         match last_str.as_str() {
             "then" => {
                 let (contents, new_chars) =
-                    multiline_loop_parsing(chars, &mut extra_lines, if_specific_parsing)?;
+                    multiline_loop_parsing(env, chars, &mut extra_lines, if_specific_parsing)?;
                 chars = new_chars;
                 if let CommandPart::Command(cmd) = commands.last_mut().unwrap().last_mut().unwrap()
                 {
@@ -559,6 +596,7 @@ fn logical_operators(
     } else {
         vec![String::new()]
     };
+
     commands
         .last_mut()
         .unwrap()
@@ -569,17 +607,19 @@ fn logical_operators(
 
 fn check_for_new_line(
     chars: &mut Peekable<OwnedChars>,
-    extra_lines: &mut Option<&mut Lines<BufReader<File>>>,
+    extra_lines: &mut Option<&mut ExtraLines>,
     add_semicolon: &bool,
     contents: &mut [String],
+    env: &mut crate::Env,
 ) -> Result<Option<Peekable<OwnedChars>>, Box<dyn Error>> {
     if chars.peek().is_none() {
         let next_line = match extra_lines {
-            Some(ref mut lines) => lines.next().ok_or("Expected another line")?.unwrap(),
+            Some(ref mut lines) => lines.next_line(env).ok_or("Expected another line")?,
             None => {
                 return Err("Expected more input".into());
             }
         };
+
         if *add_semicolon {
             contents.last_mut().unwrap().push(';');
         } else {
@@ -630,7 +670,6 @@ fn parse_char_multiline_statement(
     ) -> (ActionToTake, MultilineVariables),
 ) -> (ActionToTake, MultilineVariables) {
     let last_contents = contents.last_mut().unwrap();
-    // let mut new_last_cmd = Some(*last_cmd);
     parsing_vars.add_semicolon = true;
     let c = match chars.next() {
         Some(c) => c,
@@ -643,6 +682,7 @@ fn parse_char_multiline_statement(
         last_contents.push('\'');
         return (ActionToTake::Continue, parsing_vars);
     }
+
     match c {
         '\'' => parsing_vars.block_in_single_quotes = true,
         '\\' => {
@@ -704,8 +744,9 @@ fn if_specific_parsing(
 }
 
 fn multiline_loop_parsing(
+    env: &mut crate::Env,
     mut chars: Peekable<OwnedChars>,
-    extra_lines: &mut Option<&mut Lines<BufReader<File>>>,
+    extra_lines: &mut Option<&mut ExtraLines>,
     specific_parsing: fn(
         MultilineVariables,
         &mut Vec<String>,
@@ -718,12 +759,14 @@ fn multiline_loop_parsing(
         block_in_quotes: false,
         last_cmd: String::new(),
     };
+
     loop {
         if let Some(new_chars) = check_for_new_line(
             &mut chars,
             extra_lines,
             &parsing_vars.add_semicolon,
             &mut contents,
+            env,
         )? {
             chars = new_chars;
             parsing_vars.last_cmd = String::new();
