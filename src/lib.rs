@@ -11,7 +11,7 @@ use std::{
     env::{self, args, current_dir},
     error::Error,
     fs::{read_dir, File, OpenOptions},
-    io::{stdin, stdout, BufRead, BufReader, Lines, Write},
+    io::{stdout, BufRead, BufReader, Lines, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
     str::from_utf8,

@@ -104,19 +104,17 @@ pub fn parse_input(
                         let list_with_replacements: Vec<String> =
                             if let Some(ref conts) = list_conts {
                                 conts.to_owned()
-                            } else {
-                                if matches!(list_type, ListType::GlobbedList) {
-                                    let mut paths: Vec<String> = vec![];
-                                    for i in glob(&last_str)? {
-                                        paths.push(i?.display().to_string());
-                                    }
-                                    paths
-                                } else {
-                                    env.lists
-                                        .get(&last_str)
-                                        .ok_or(crate::InvalidItemError)?
-                                        .to_vec()
+                            } else if matches!(list_type, ListType::GlobbedList) {
+                                let mut paths: Vec<String> = vec![];
+                                for i in glob(&last_str)? {
+                                    paths.push(i?.display().to_string());
                                 }
+                                paths
+                            } else {
+                                env.lists
+                                    .get(&last_str)
+                                    .ok_or(crate::InvalidItemError)?
+                                    .to_vec()
                             };
                         for item in list_with_replacements {
                             let mut replacement_pattern = pattern.clone();
