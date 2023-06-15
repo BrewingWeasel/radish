@@ -29,7 +29,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
 
     loop {
         if let Event::Key(x) = read().unwrap() {
-            let binding = env.bindings.get(&x);
+            let binding = env.settings.bindings.get(&x);
             if let Some((reset, cmd)) = binding {
                 let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
@@ -118,7 +118,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                             ),
                             CompletionType::List => (
                                 get_backwards_until(&input, '%'),
-                                env.lists.keys().map(Cow::Borrowed).collect(),
+                                env.settings.lists.keys().map(Cow::Borrowed).collect(),
                             ),
                             CompletionType::File => {
                                 let file_name = get_backwards_until(&input, ' ');

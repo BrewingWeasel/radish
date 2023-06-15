@@ -144,7 +144,7 @@ pub fn parse_input(
                                 }
                                 paths
                             } else {
-                                env.lists
+                                env.get_lists()
                                     .get(&last_str)
                                     .ok_or(crate::InvalidItemError)?
                                     .to_vec()
@@ -287,7 +287,7 @@ pub fn parse_input(
                         {
                             variable_name.push(digit)
                         }
-                        let val = match env.shell_variables.get(&variable_name) {
+                        let val = match env.settings.shell_variables.get(&variable_name) {
                             Some(v) => v.to_string(),
                             None => env::var(variable_name)?,
                         };
@@ -354,7 +354,7 @@ pub fn parse_input(
                             .by_ref()
                             .take_while(|x| *x != '\n' && *x != ' ')
                             .collect::<String>();
-                        let loc_val = if let Some(l) = env.locations.get(&name) {
+                        let loc_val = if let Some(l) = env.settings.locations.get(&name) {
                             Ok(l)
                         } else {
                             if !env.dirs_up_to_date {

@@ -17,9 +17,11 @@ use std::{
     str::from_utf8,
 };
 use tokenizer::{CommandPart, ExtraLines, TokenizedOutput};
+use utils::HashOptions;
 
 mod input_reader;
 mod tokenizer;
+mod utils;
 
 #[derive(Debug, Clone)]
 pub struct InvalidItemError;
@@ -42,6 +44,29 @@ pub enum Scope {
 }
 
 #[derive(Debug)]
+pub struct EnvValues {
+    lists: HashMap<String, Vec<String>>,
+    locations: HashMap<String, String>,
+    aliases: HashMap<String, String>,
+    functions: HashMap<String, String>,
+    bindings: HashMap<KeyEvent, (bool, String)>,
+    shell_variables: HashMap<String, String>,
+}
+
+impl EnvValues {
+    pub fn new() -> EnvValues {
+        EnvValues {
+            lists: HashMap::new(),
+            functions: HashMap::new(),
+            locations: HashMap::new(),
+            aliases: HashMap::new(),
+            bindings: HashMap::new(),
+            shell_variables: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Env<'a> {
     history: Vec<String>,
     sorted_history: Vec<Cow<'a, String>>,
@@ -50,14 +75,25 @@ pub struct Env<'a> {
     dirs_up_to_date: bool,
     commands: Vec<String>,
     prompt_length: u16,
-    lists: HashMap<String, Vec<String>>,
-    locations: HashMap<String, String>,
-    aliases: HashMap<String, String>,
-    functions: HashMap<String, String>,
-    bindings: HashMap<KeyEvent, (bool, String)>,
-    shell_variables: HashMap<String, String>,
     continue_if: bool,
+    settings: EnvValues,
     scope: Scope,
+    cur_workspace: String,
+    workspaces: HashMap<String, EnvValues>,
+}
+
+impl Env<'_> {
+    pub fn get_lists(&self) -> HashOptions<String, Vec<String>> {
+        let secondary = if let Some(workspace) = self.workspaces.get(&self.cur_workspace) {
+            Some(&workspace.lists)
+        } else {
+            None
+        };
+        HashOptions {
+            orig: &self.settings.lists,
+            secondary,
+        }
+    }
 }
 
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
@@ -108,21 +144,31 @@ pub fn run_radish() {
     let mut env = Env {
         history,
         sorted_history,
+        dirs_up_to_date: true,
+        prompt_length: 3,
         commands,
         dirs,
         sorted_dirs,
-        dirs_up_to_date: true,
-        prompt_length: 3,
-        lists: HashMap::new(),
-        functions: HashMap::new(),
-        locations: HashMap::new(),
-        aliases: HashMap::new(),
-        bindings: HashMap::new(),
-        shell_variables: HashMap::new(),
+        settings: EnvValues::new(),
         continue_if: false,
         scope: Scope::Main,
+        cur_workspace: String::from("lol"),
+        workspaces: HashMap::new(),
     };
-    env.shell_variables
+
+    // TODO: remove after testing workspaces
+    env.workspaces.insert(String::from("lol"), EnvValues::new());
+    env.workspaces.get_mut("lol").unwrap().lists.insert(
+        String::from("xd"),
+        vec![
+            String::from("xd"),
+            String::from("rofl"),
+            String::from("jajajja"),
+        ],
+    );
+
+    env.settings
+        .shell_variables
         .insert(String::from("?"), String::from("0"));
     let mut args = args().peekable();
     args.next();
@@ -139,7 +185,7 @@ pub fn run_radish() {
         eprintln!("{e}");
     };
     loop {
-        if let Some(func) = env.functions.get("radish_eval_on_new") {
+        if let Some(func) = env.settings.functions.get("radish_eval_on_new") {
             let new_func = func.to_owned();
             if let Err(e) = exec_function(&mut env, &new_func) {
                 eprintln!("{e}");
@@ -185,9 +231,9 @@ fn run_from_string(
     }
 
     let mut new_input = input.to_string();
-    for alias in env.aliases.keys() {
+    for alias in env.settings.aliases.keys() {
         if new_input.starts_with(alias) {
-            new_input = new_input.replacen(alias, env.aliases.get(alias).unwrap(), 1);
+            new_input = new_input.replacen(alias, env.settings.aliases.get(alias).unwrap(), 1);
         }
     }
     let parsed_input = tokenizer::parse_input(&new_input, env, extra_lines)?;
@@ -365,7 +411,7 @@ fn run_input(
             last_command = run(&command, tokens.to_vec(), stdout, stdin, stderr, env)?;
         }
         if let Some(mut cmd) = last_command {
-            env.shell_variables.insert(
+            env.settings.shell_variables.insert(
                 String::from("?"),
                 cmd.wait()?
                     .to_string()
@@ -408,15 +454,15 @@ fn run(
             Ok(None)
         }
         "mklist" => {
-            mklist(&mut env.lists, args);
+            mklist(&mut env.settings.lists, args);
             Ok(None)
         }
         "alias" => {
-            alias(&mut env.aliases, args.first().unwrap());
+            alias(&mut env.settings.aliases, args.first().unwrap());
             Ok(None)
         }
         "bind" => {
-            bind(&mut env.bindings, args)?;
+            bind(&mut env.settings.bindings, args)?;
             Ok(None)
         }
         "export" => {
@@ -424,11 +470,11 @@ fn run(
             Ok(None)
         }
         "mkloc" => {
-            mkloc(&mut env.locations, args);
+            mkloc(&mut env.settings.locations, args);
             Ok(None)
         }
         "function" => {
-            mkloc(&mut env.functions, args);
+            mkloc(&mut env.settings.functions, args);
             Ok(None)
         }
         "dirs" => dirs(env, stdin, stdout, stderr),
@@ -439,7 +485,8 @@ fn run(
         }
         "return" => {
             if let Scope::Function = env.scope {
-                env.shell_variables
+                env.settings
+                    .shell_variables
                     .insert(String::from("?"), args.first().unwrap().to_string());
 
                 // Hack to stop executing
@@ -450,7 +497,7 @@ fn run(
             }
         }
         command => {
-            if let Some(contents) = env.functions.get(command) {
+            if let Some(contents) = env.settings.functions.get(command) {
                 exec_function(env, &contents.to_owned())
             } else {
                 match Command::new(command)
