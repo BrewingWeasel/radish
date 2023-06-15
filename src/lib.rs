@@ -65,6 +65,11 @@ impl EnvValues {
         }
     }
 }
+impl Default for EnvValues {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Debug)]
 pub struct Env<'a> {
@@ -85,11 +90,10 @@ pub struct Env<'a> {
 
 impl Env<'_> {
     pub fn get_lists(&self) -> HashOptions<String, Vec<String>> {
-        let secondary = if let Some(workspace) = self.workspaces.get(&self.cur_workspace) {
-            Some(&workspace.lists)
-        } else {
-            None
-        };
+        let secondary = self
+            .workspaces
+            .get(&self.cur_workspace)
+            .map(|workspace| &workspace.lists);
         HashOptions {
             orig: &self.settings.lists,
             secondary,
@@ -570,7 +574,7 @@ fn write_to_file(file_name: &str, conts: &Vec<String>) {
         .open(dirs::home_dir().unwrap().join(file_name))
         .unwrap();
     for i in conts {
-        file.write(format!("{i}\n").as_bytes())
+        file.write_all(format!("{i}\n").as_bytes())
             .expect("Error writing to history on exit");
     }
 }
@@ -761,7 +765,7 @@ fn unescape(mut input: String) -> String {
     input
 }
 
-fn exec_function(env: &mut Env, contents: &String) -> Result<Option<Child>, Box<dyn Error>> {
+fn exec_function(env: &mut Env, contents: &str) -> Result<Option<Child>, Box<dyn Error>> {
     let new_contents = contents
         .strip_prefix('{')
         .unwrap()
