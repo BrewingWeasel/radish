@@ -10,7 +10,7 @@ use std::{
     collections::HashMap,
     env::{self, args, current_dir},
     error::Error,
-    fs::{read_dir, File, OpenOptions},
+    fs::{self, read_dir, File, OpenOptions},
     io::{stdout, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
@@ -80,6 +80,7 @@ pub struct Env<'a> {
     scope: Scope,
     cur_workspace: String,
     workspaces: HashMap<String, EnvValues>,
+    workspace_locs: HashMap<PathBuf, String>,
 }
 
 impl Env<'_> {
@@ -152,8 +153,9 @@ pub fn run_radish() {
         settings: EnvValues::new(),
         continue_if: false,
         scope: Scope::Main,
-        cur_workspace: String::from("lol"),
+        cur_workspace: String::from(""),
         workspaces: HashMap::new(),
+        workspace_locs: HashMap::new(),
     };
 
     // TODO: remove after testing workspaces
@@ -465,6 +467,10 @@ fn run(
             bind(&mut env.settings.bindings, args)?;
             Ok(None)
         }
+        "mkworkspace" => {
+            mkworkspace(&mut env.workspace_locs, args)?;
+            Ok(None)
+        }
         "export" => {
             export(args.first().unwrap());
             Ok(None)
@@ -479,6 +485,8 @@ fn run(
         }
         "dirs" => dirs(env, stdin, stdout, stderr),
         "read" => read(stdin, stdout, stderr),
+        "workspaces" => fake_stdout(stdin, stdout, stderr, &format!("{:?}", env.workspace_locs)),
+        "workspace" => fake_stdout(stdin, stdout, stderr, &env.cur_workspace),
         "exit" => {
             exit(env);
             unreachable!()
@@ -523,7 +531,7 @@ fn fake_stdout(
     stdin: Stdio,
     stdout: Stdio,
     stderr: Stdio,
-    output: String,
+    output: &str,
 ) -> Result<Option<Child>, Box<dyn Error>> {
     match Command::new("echo") // Hacky workaround so it can be piped
         .args(vec![output])
@@ -546,13 +554,13 @@ fn dirs(
     stdout: Stdio,
     stderr: Stdio,
 ) -> Result<Option<Child>, Box<dyn Error>> {
-    fake_stdout(stdin, stdout, stderr, env.dirs.join("\n"))
+    fake_stdout(stdin, stdout, stderr, &env.dirs.join("\n"))
 }
 
 fn read(stdin: Stdio, stdout: Stdio, stderr: Stdio) -> Result<Option<Child>, Box<dyn Error>> {
     let mut buffer = String::new();
     std::io::stdin().read_line(&mut buffer)?;
-    fake_stdout(stdin, stdout, stderr, buffer)
+    fake_stdout(stdin, stdout, stderr, &buffer)
 }
 
 fn write_to_file(file_name: &str, conts: &Vec<String>) {
@@ -585,6 +593,9 @@ fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
         }
     };
     env::set_current_dir(newdir)?;
+    if let Some(val) = env.workspace_locs.get(&env::current_dir()?) {
+        env.cur_workspace = val.to_string();
+    }
     let new_dir_name = current_dir().unwrap().display().to_string();
     if !env.sorted_dirs.contains(&new_dir_name) {
         env.dirs_up_to_date = false;
@@ -699,6 +710,18 @@ fn bind(
         crokey::parse(keycode)?,
         (reset, args.next().unwrap().to_string()),
     );
+    Ok(())
+}
+
+fn mkworkspace(
+    workspaces: &mut HashMap<PathBuf, String>,
+    mut args: Vec<String>,
+) -> Result<(), Box<dyn Error>> {
+    if args.len() != 2 {
+        return Err("Wrong number of arguments".into());
+    }
+    let dir = PathBuf::from(&args[0]);
+    workspaces.insert(fs::canonicalize(dir)?, args.pop().unwrap());
     Ok(())
 }
 
