@@ -4,7 +4,7 @@ pub struct HashOptions<'a, K, V>
 where
     K: Eq + Hash,
 {
-    pub orig: &'a HashMap<K, V>,
+    pub orig: &'a mut HashMap<K, V>,
     pub secondary: Option<&'a HashMap<K, V>>,
 }
 
@@ -19,5 +19,8 @@ where
             }
         }
         self.orig.get(key)
+    }
+    pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+        self.orig.insert(key, value)
     }
 }

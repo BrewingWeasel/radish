@@ -41,6 +41,7 @@ impl std::fmt::Display for InvalidItemError {
 pub enum Scope {
     Main,
     Function,
+    Workspace(String),
 }
 
 #[derive(Debug)]
@@ -89,14 +90,21 @@ pub struct Env<'a> {
 }
 
 impl Env<'_> {
-    pub fn get_lists(&self) -> HashOptions<String, Vec<String>> {
-        let secondary = self
-            .workspaces
-            .get(&self.cur_workspace)
-            .map(|workspace| &workspace.lists);
-        HashOptions {
-            orig: &self.settings.lists,
-            secondary,
+    pub fn get_lists(&mut self) -> HashOptions<String, Vec<String>> {
+        if let Scope::Workspace(workspace_name) = &self.scope {
+            HashOptions {
+                orig: &mut self.workspaces.get_mut(workspace_name).unwrap().lists,
+                secondary: None,
+            }
+        } else {
+            let secondary = self
+                .workspaces
+                .get(&self.cur_workspace)
+                .map(|workspace| &workspace.lists);
+            HashOptions {
+                orig: &mut self.settings.lists,
+                secondary,
+            }
         }
     }
 }
@@ -162,17 +170,6 @@ pub fn run_radish() {
         workspace_locs: HashMap::new(),
     };
 
-    // TODO: remove after testing workspaces
-    env.workspaces.insert(String::from("lol"), EnvValues::new());
-    env.workspaces.get_mut("lol").unwrap().lists.insert(
-        String::from("xd"),
-        vec![
-            String::from("xd"),
-            String::from("rofl"),
-            String::from("jajajja"),
-        ],
-    );
-
     env.settings
         .shell_variables
         .insert(String::from("?"), String::from("0"));
@@ -193,7 +190,7 @@ pub fn run_radish() {
     loop {
         if let Some(func) = env.settings.functions.get("radish_eval_on_new") {
             let new_func = func.to_owned();
-            if let Err(e) = exec_function(&mut env, &new_func) {
+            if let Err(e) = exec_function(&mut env, &new_func, Scope::Function) {
                 eprintln!("{e}");
             };
         };
@@ -460,7 +457,7 @@ fn run(
             Ok(None)
         }
         "mklist" => {
-            mklist(&mut env.settings.lists, args);
+            mklist(env, args);
             Ok(None)
         }
         "alias" => {
@@ -472,7 +469,7 @@ fn run(
             Ok(None)
         }
         "mkworkspace" => {
-            mkworkspace(&mut env.workspace_locs, args)?;
+            mkworkspace(env, args)?;
             Ok(None)
         }
         "export" => {
@@ -489,8 +486,18 @@ fn run(
         }
         "dirs" => dirs(env, stdin, stdout, stderr),
         "read" => read(stdin, stdout, stderr),
-        "workspaces" => fake_stdout(stdin, stdout, stderr, &format!("{:?}", env.workspace_locs)),
-        "workspace" => fake_stdout(stdin, stdout, stderr, &env.cur_workspace),
+        "list_workspaces" => {
+            fake_stdout(stdin, stdout, stderr, &format!("{:?}", env.workspace_locs))
+        }
+        "list_workspace_values" => {
+            fake_stdout(stdin, stdout, stderr, &format!("{:?}", env.workspaces))
+        }
+        "cur_workspace" => fake_stdout(stdin, stdout, stderr, &env.cur_workspace),
+        "workspace" => exec_function(
+            env,
+            args.last().unwrap(),
+            Scope::Workspace(args.first().unwrap().to_string()),
+        ),
         "exit" => {
             exit(env);
             unreachable!()
@@ -510,7 +517,7 @@ fn run(
         }
         command => {
             if let Some(contents) = env.settings.functions.get(command) {
-                exec_function(env, &contents.to_owned())
+                exec_function(env, &contents.to_owned(), Scope::Function)
             } else {
                 match Command::new(command)
                     .args(args)
@@ -608,10 +615,20 @@ fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn mklist(lists: &mut HashMap<String, Vec<String>>, args: Vec<String>) {
+fn mklist(env: &mut Env, args: Vec<String>) {
     let mut args = args.iter();
     if let Some(first) = args.next() {
-        lists.insert(first.to_string(), args.map(|x| x.to_string()).collect());
+        if let Scope::Workspace(workspace_name) = &env.scope {
+            env.workspaces
+                .get_mut(workspace_name)
+                .unwrap()
+                .lists
+                .insert(first.to_string(), args.map(|x| x.to_string()).collect());
+        } else {
+            env.settings
+                .lists
+                .insert(first.to_string(), args.map(|x| x.to_string()).collect());
+        }
     } else {
         execute!(stdout(), Print("No list name provided")).unwrap();
     }
@@ -717,15 +734,16 @@ fn bind(
     Ok(())
 }
 
-fn mkworkspace(
-    workspaces: &mut HashMap<PathBuf, String>,
-    mut args: Vec<String>,
-) -> Result<(), Box<dyn Error>> {
+fn mkworkspace(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
     if args.len() != 2 {
         return Err("Wrong number of arguments".into());
     }
     let dir = PathBuf::from(&args[0]);
-    workspaces.insert(fs::canonicalize(dir)?, args.pop().unwrap());
+    let workspace_name = args.pop().unwrap();
+    env.workspaces
+        .insert(workspace_name.clone(), EnvValues::new());
+    env.workspace_locs
+        .insert(fs::canonicalize(dir)?, workspace_name);
     Ok(())
 }
 
@@ -765,7 +783,11 @@ fn unescape(mut input: String) -> String {
     input
 }
 
-fn exec_function(env: &mut Env, contents: &str) -> Result<Option<Child>, Box<dyn Error>> {
+fn exec_function(
+    env: &mut Env,
+    contents: &str,
+    scope: Scope,
+) -> Result<Option<Child>, Box<dyn Error>> {
     let new_contents = contents
         .strip_prefix('{')
         .unwrap()
@@ -773,7 +795,7 @@ fn exec_function(env: &mut Env, contents: &str) -> Result<Option<Child>, Box<dyn
         .strip_suffix('}')
         .unwrap()
         .to_string();
-    env.scope = Scope::Function;
+    env.scope = scope;
     let last_cmd = run_from_string(Cow::Borrowed(&new_contents), env, true, None)?;
     env.scope = Scope::Main;
     Ok(last_cmd)

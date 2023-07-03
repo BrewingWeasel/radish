@@ -65,7 +65,7 @@ enum CurrentlyTokenizing {
     List(ListType, Option<Vec<String>>),
     InlineList(Vec<String>),
     VariableAssignment(usize),
-    Function,
+    Function(String),
 }
 
 pub enum ExtraLines<'a> {
@@ -181,7 +181,7 @@ pub fn parse_input(
                     currently_tokenizing = CurrentlyTokenizing::Arg;
                     continue;
                 }
-                CurrentlyTokenizing::Function => {
+                CurrentlyTokenizing::Function(func_name) => {
                     let (contents, new_chars) = multiline_loop_parsing(
                         env,
                         chars,
@@ -192,7 +192,7 @@ pub fn parse_input(
                     if let CommandPart::Command(cmd) =
                         commands.last_mut().unwrap().last_mut().unwrap()
                     {
-                        cmd.insert(0, String::from("function"));
+                        cmd.insert(0, func_name.to_string());
                         cmd.push(contents.first().unwrap().to_string());
                     }
                     for branch in contents[1..].iter() {
@@ -231,7 +231,8 @@ pub fn parse_input(
                 }
                 continue;
             }
-            "function" => {
+            val if (val == "function" || val == "workspace") => {
+                let function_type = val.to_owned();
                 commands
                     .last_mut()
                     .unwrap()
@@ -253,7 +254,7 @@ pub fn parse_input(
                     .unwrap()
                     .unwrap_command_mut()
                     .push(function_name);
-                currently_tokenizing = CurrentlyTokenizing::Function;
+                currently_tokenizing = CurrentlyTokenizing::Function(function_type);
                 analyze_next = true;
                 continue;
             }
@@ -552,7 +553,8 @@ pub fn parse_input(
                     }
                     ')' => {
                         if current_token_index == 2 && last_str == "(" {
-                            currently_tokenizing = CurrentlyTokenizing::Function;
+                            currently_tokenizing =
+                                CurrentlyTokenizing::Function(String::from("function"));
                             commands
                                 .last_mut()
                                 .unwrap()
