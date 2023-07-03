@@ -89,61 +89,32 @@ pub struct Env<'a> {
     workspace_locs: HashMap<PathBuf, String>,
 }
 
-// TODO: macro
+macro_rules! get_env_value {
+    ($a:tt, $b:ident, $c:ty, $d:ty) => {
+        pub fn $a(&self) -> HashOptions<$c, $d> {
+            if let Scope::Workspace(workspace_name) = &self.scope {
+                HashOptions {
+                    orig: &self.workspaces.get(workspace_name).unwrap().$b,
+                    secondary: None,
+                }
+            } else {
+                let secondary = self
+                    .workspaces
+                    .get(&self.cur_workspace)
+                    .map(|workspace| &workspace.$b);
+                HashOptions {
+                    orig: &self.settings.$b,
+                    secondary,
+                }
+            }
+        }
+    };
+}
+
 impl Env<'_> {
-    pub fn get_lists(&mut self) -> HashOptions<String, Vec<String>> {
-        if let Scope::Workspace(workspace_name) = &self.scope {
-            HashOptions {
-                orig: &mut self.workspaces.get_mut(workspace_name).unwrap().lists,
-                secondary: None,
-            }
-        } else {
-            let secondary = self
-                .workspaces
-                .get(&self.cur_workspace)
-                .map(|workspace| &workspace.lists);
-            HashOptions {
-                orig: &mut self.settings.lists,
-                secondary,
-            }
-        }
-    }
-
-    pub fn get_bindings(&self) -> HashOptions<KeyEvent, (bool, String)> {
-        if let Scope::Workspace(workspace_name) = &self.scope {
-            HashOptions {
-                orig: &self.workspaces.get(workspace_name).unwrap().bindings,
-                secondary: None,
-            }
-        } else {
-            let secondary = self
-                .workspaces
-                .get(&self.cur_workspace)
-                .map(|workspace| &workspace.bindings);
-            HashOptions {
-                orig: &self.settings.bindings,
-                secondary,
-            }
-        }
-    }
-
-    pub fn get_aliases(&self) -> HashOptions<String, String> {
-        if let Scope::Workspace(workspace_name) = &self.scope {
-            HashOptions {
-                orig: &self.workspaces.get(workspace_name).unwrap().aliases,
-                secondary: None,
-            }
-        } else {
-            let secondary = self
-                .workspaces
-                .get(&self.cur_workspace)
-                .map(|workspace| &workspace.aliases);
-            HashOptions {
-                orig: &self.settings.aliases,
-                secondary,
-            }
-        }
-    }
+    get_env_value!(get_lists, lists, String, Vec<String>);
+    get_env_value!(get_bindings, bindings, KeyEvent, (bool, String));
+    get_env_value!(get_aliases, aliases, String, String);
 }
 
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
@@ -271,9 +242,10 @@ fn run_from_string(
     }
 
     let mut new_input = input.to_string();
-    for alias in env.get_aliases().keys() {
+    let aliases = env.get_aliases();
+    for alias in aliases.keys() {
         if new_input.starts_with(alias) {
-            new_input = new_input.replacen(alias, env.get_aliases().get(alias).unwrap(), 1);
+            new_input = new_input.replacen(alias, aliases.get(alias).unwrap(), 1);
         }
     }
     let parsed_input = tokenizer::parse_input(&new_input, env, extra_lines)?;
