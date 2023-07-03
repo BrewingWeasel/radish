@@ -165,7 +165,7 @@ pub fn run_radish() {
         settings: EnvValues::new(),
         continue_if: false,
         scope: Scope::Main,
-        cur_workspace: String::from(""),
+        cur_workspace: String::new(),
         workspaces: HashMap::new(),
         workspace_locs: HashMap::new(),
     };
@@ -606,6 +606,8 @@ fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
     env::set_current_dir(newdir)?;
     if let Some(val) = env.workspace_locs.get(&env::current_dir()?) {
         env.cur_workspace = val.to_string();
+    } else {
+        env.cur_workspace = String::new();
     }
     let new_dir_name = current_dir().unwrap().display().to_string();
     if !env.sorted_dirs.contains(&new_dir_name) {
