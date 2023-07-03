@@ -89,6 +89,7 @@ pub struct Env<'a> {
     workspace_locs: HashMap<PathBuf, String>,
 }
 
+// TODO: macro
 impl Env<'_> {
     pub fn get_lists(&mut self) -> HashOptions<String, Vec<String>> {
         if let Scope::Workspace(workspace_name) = &self.scope {
@@ -103,6 +104,42 @@ impl Env<'_> {
                 .map(|workspace| &workspace.lists);
             HashOptions {
                 orig: &mut self.settings.lists,
+                secondary,
+            }
+        }
+    }
+
+    pub fn get_bindings(&self) -> HashOptions<KeyEvent, (bool, String)> {
+        if let Scope::Workspace(workspace_name) = &self.scope {
+            HashOptions {
+                orig: &self.workspaces.get(workspace_name).unwrap().bindings,
+                secondary: None,
+            }
+        } else {
+            let secondary = self
+                .workspaces
+                .get(&self.cur_workspace)
+                .map(|workspace| &workspace.bindings);
+            HashOptions {
+                orig: &self.settings.bindings,
+                secondary,
+            }
+        }
+    }
+
+    pub fn get_aliases(&self) -> HashOptions<String, String> {
+        if let Scope::Workspace(workspace_name) = &self.scope {
+            HashOptions {
+                orig: &self.workspaces.get(workspace_name).unwrap().aliases,
+                secondary: None,
+            }
+        } else {
+            let secondary = self
+                .workspaces
+                .get(&self.cur_workspace)
+                .map(|workspace| &workspace.aliases);
+            HashOptions {
+                orig: &self.settings.aliases,
                 secondary,
             }
         }
@@ -234,9 +271,9 @@ fn run_from_string(
     }
 
     let mut new_input = input.to_string();
-    for alias in env.settings.aliases.keys() {
+    for alias in env.get_aliases().keys() {
         if new_input.starts_with(alias) {
-            new_input = new_input.replacen(alias, env.settings.aliases.get(alias).unwrap(), 1);
+            new_input = new_input.replacen(alias, env.get_aliases().get(alias).unwrap(), 1);
         }
     }
     let parsed_input = tokenizer::parse_input(&new_input, env, extra_lines)?;
@@ -461,11 +498,11 @@ fn run(
             Ok(None)
         }
         "alias" => {
-            alias(&mut env.settings.aliases, args.first().unwrap());
+            alias(env, args.first().unwrap())?;
             Ok(None)
         }
         "bind" => {
-            bind(&mut env.settings.bindings, args)?;
+            bind(env, args)?;
             Ok(None)
         }
         "mkworkspace" => {
@@ -495,7 +532,7 @@ fn run(
         "cur_workspace" => fake_stdout(stdin, stdout, stderr, &env.cur_workspace),
         "workspace" => exec_function(
             env,
-            args.last().unwrap(),
+            args.last().ok_or("No arguments provided for workspace")?,
             Scope::Workspace(args.first().unwrap().to_string()),
         ),
         "exit" => {
@@ -709,18 +746,26 @@ fn export(args: &str) {
     let mut args = args.split('=');
     env::set_var(args.next().unwrap(), args.next().unwrap());
 }
-fn alias(aliases: &mut HashMap<String, String>, args: &str) {
+fn alias(env: &mut Env, args: &str) -> Result<(), Box<dyn Error>> {
     let mut args = args.split('=');
-    aliases.insert(
+    let (name, value) = (
         args.next().unwrap().to_string(),
         args.next().unwrap().to_string(),
     );
+
+    if let Scope::Workspace(workspace_name) = &env.scope {
+        env.workspaces
+            .get_mut(workspace_name)
+            .ok_or("Workspace does not exist")?
+            .aliases
+            .insert(name, value);
+    } else {
+        env.settings.aliases.insert(name, value);
+    }
+    Ok(())
 }
 
-fn bind(
-    aliases: &mut HashMap<KeyEvent, (bool, String)>,
-    mut args: Vec<String>,
-) -> Result<(), Box<dyn Error>> {
+fn bind(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
     let reset = if args[0] == "-x" {
         args.remove(0);
         true
@@ -729,10 +774,20 @@ fn bind(
     };
     let mut args = args[0].split(':');
     let keycode = args.next().ok_or(InvalidItemError)?;
-    aliases.insert(
-        crokey::parse(keycode)?,
-        (reset, args.next().unwrap().to_string()),
-    );
+
+    let command = args.next().unwrap().to_string();
+
+    if let Scope::Workspace(workspace_name) = &env.scope {
+        env.workspaces
+            .get_mut(workspace_name)
+            .ok_or("Workspace does not exist")?
+            .bindings
+            .insert(crokey::parse(keycode)?, (reset, command));
+    } else {
+        env.settings
+            .bindings
+            .insert(crokey::parse(keycode)?, (reset, command));
+    }
     Ok(())
 }
 

@@ -29,8 +29,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
 
     loop {
         if let Event::Key(x) = read().unwrap() {
-            let binding = env.settings.bindings.get(&x);
-            if let Some((reset, cmd)) = binding {
+            if let Some((reset, cmd)) = env.get_bindings().get(&x) {
                 let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
                 if *reset {
