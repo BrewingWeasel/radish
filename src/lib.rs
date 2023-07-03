@@ -84,9 +84,9 @@ pub struct Env<'a> {
     continue_if: bool,
     settings: EnvValues,
     scope: Scope,
-    cur_workspace: String,
+    cur_workspace: Vec<String>,
     workspaces: HashMap<String, EnvValues>,
-    workspace_locs: HashMap<PathBuf, String>,
+    workspace_locs: Vec<(PathBuf, String)>,
 }
 
 macro_rules! get_env_value {
@@ -98,13 +98,15 @@ macro_rules! get_env_value {
                     secondary: None,
                 }
             } else {
-                let secondary = self
-                    .workspaces
-                    .get(&self.cur_workspace)
-                    .map(|workspace| &workspace.$b);
+                let mut secondary = vec![];
+                for workspace in &self.cur_workspace {
+                    if let Some(v) = self.workspaces.get(workspace) {
+                        secondary.push(&v.$b)
+                    }
+                }
                 HashOptions {
                     orig: &self.settings.$b,
-                    secondary,
+                    secondary: Some(secondary),
                 }
             }
         }
@@ -173,9 +175,9 @@ pub fn run_radish() {
         settings: EnvValues::new(),
         continue_if: false,
         scope: Scope::Main,
-        cur_workspace: String::new(),
+        cur_workspace: vec![],
         workspaces: HashMap::new(),
-        workspace_locs: HashMap::new(),
+        workspace_locs: vec![],
     };
 
     env.settings
@@ -501,7 +503,7 @@ fn run(
         "list_workspace_values" => {
             fake_stdout(stdin, stdout, stderr, &format!("{:?}", env.workspaces))
         }
-        "cur_workspace" => fake_stdout(stdin, stdout, stderr, &env.cur_workspace),
+        "cur_workspace" => fake_stdout(stdin, stdout, stderr, &format!("{:?}", &env.cur_workspace)),
         "workspace" => exec_function(
             env,
             args.last().ok_or("No arguments provided for workspace")?,
@@ -613,10 +615,11 @@ fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
         }
     };
     env::set_current_dir(newdir)?;
-    if let Some(val) = env.workspace_locs.get(&env::current_dir()?) {
-        env.cur_workspace = val.to_string();
-    } else {
-        env.cur_workspace = String::new();
+    env.cur_workspace = vec![];
+    for (k, v) in &env.workspace_locs {
+        if k == &env::current_dir()? {
+            env.cur_workspace.push(v.to_string());
+        }
     }
     let new_dir_name = current_dir().unwrap().display().to_string();
     if !env.sorted_dirs.contains(&new_dir_name) {
@@ -772,7 +775,7 @@ fn mkworkspace(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error
     env.workspaces
         .insert(workspace_name.clone(), EnvValues::new());
     env.workspace_locs
-        .insert(fs::canonicalize(dir)?, workspace_name);
+        .push((fs::canonicalize(dir)?, workspace_name));
     Ok(())
 }
 
