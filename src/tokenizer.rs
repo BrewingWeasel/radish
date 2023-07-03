@@ -231,7 +231,10 @@ pub fn parse_input(
                 }
                 continue;
             }
-            val if (val == "function" || val == "workspace") => {
+            val if (val == "function" || val == "workspace")
+                && !(chars.peek() == Some(&' ') || chars.peek().is_none()) =>
+            {
+                println!("{:?}", chars.peek());
                 let function_type = val.to_owned();
                 commands
                     .last_mut()
