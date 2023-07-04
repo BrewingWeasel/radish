@@ -119,6 +119,7 @@ impl Env<'_> {
     get_env_value!(get_lists, lists, String, Vec<String>);
     get_env_value!(get_bindings, bindings, KeyEvent, (bool, String));
     get_env_value!(get_aliases, aliases, String, String);
+    get_env_value!(get_functions, functions, String, String);
 }
 
 fn run_from_file(path: PathBuf, env: &mut Env) -> Result<(), Box<dyn Error>> {
@@ -532,7 +533,7 @@ fn run(
             }
         }
         command => {
-            if let Some(contents) = env.settings.functions.get(command) {
+            if let Some(contents) = env.get_functions().get(&command.to_string()) {
                 exec_function(env, &contents.to_owned(), Scope::Function)
             } else {
                 match Command::new(command)
@@ -540,7 +541,6 @@ fn run(
                     .stdin(stdin)
                     .stdout(stdout)
                     .stderr(stderr)
-                    // .stderr(Stdio::null())
                     .spawn()
                 {
                     Ok(output) => Ok(Some(output)),
