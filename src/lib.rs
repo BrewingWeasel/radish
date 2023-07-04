@@ -10,12 +10,14 @@ use std::{
     collections::HashMap,
     env::{self, args, current_dir},
     error::Error,
-    fs::{self, read_dir, File, OpenOptions},
+    fs::{read_dir, File, OpenOptions},
     io::{stdout, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{self, Child, Command, Stdio},
     str::from_utf8,
 };
+
+use clap::Parser;
 use tokenizer::{CommandPart, ExtraLines, TokenizedOutput};
 use utils::HashOptions;
 
@@ -86,7 +88,7 @@ pub struct Env<'a> {
     scope: Scope,
     cur_workspace: Vec<String>,
     workspaces: HashMap<String, EnvValues>,
-    workspace_locs: Vec<(PathBuf, String)>,
+    workspace_locs: Vec<WorkspaceArgs>,
 }
 
 macro_rules! get_env_value {
@@ -197,6 +199,9 @@ pub fn run_radish() {
     if let Err(e) = run_from_file(dirs::home_dir().unwrap().join(".radishrc"), &mut env) {
         eprintln!("{e}");
     };
+
+    check_for_workspace(&mut env).expect("Error fetching directory");
+
     loop {
         if let Some(func) = env.settings.functions.get("radish_eval_on_new") {
             let new_func = func.to_owned();
@@ -603,6 +608,19 @@ pub fn exit(env: &mut Env) {
     process::exit(0);
 }
 
+fn check_for_workspace(env: &mut Env) -> Result<(), Box<dyn Error>> {
+    env.cur_workspace = vec![];
+    for workspace in &env.workspace_locs {
+        if workspace.directory == Some(env::current_dir()?)
+            || (workspace.childs
+                && env::current_dir()?.starts_with(workspace.directory.as_ref().unwrap()))
+        {
+            env.cur_workspace.push(workspace.name.clone());
+        }
+    }
+    Ok(())
+}
+
 fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
     let newdir = match args.first() {
         None => dirs::home_dir().unwrap(),
@@ -615,12 +633,7 @@ fn cd(args: Vec<String>, env: &mut Env) -> Result<(), Box<dyn Error>> {
         }
     };
     env::set_current_dir(newdir)?;
-    env.cur_workspace = vec![];
-    for (k, v) in &env.workspace_locs {
-        if k == &env::current_dir()? {
-            env.cur_workspace.push(v.to_string());
-        }
-    }
+    check_for_workspace(env)?;
     let new_dir_name = current_dir().unwrap().display().to_string();
     if !env.sorted_dirs.contains(&new_dir_name) {
         env.dirs_up_to_date = false;
@@ -766,16 +779,26 @@ fn bind(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[derive(Parser, Debug)]
+struct WorkspaceArgs {
+    /// Name of the workspace
+    name: String,
+
+    /// Specific directory that activates a workspace
+    #[arg(short, long)]
+    directory: Option<PathBuf>,
+
+    /// Decides whether or not children directories share the same workspace as their parent
+    /// (defaults to false)
+    #[arg(short, long, default_value_t = false)]
+    childs: bool,
+}
+
 fn mkworkspace(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
-    if args.len() != 2 {
-        return Err("Wrong number of arguments".into());
-    }
-    let dir = PathBuf::from(&args[0]);
-    let workspace_name = args.pop().unwrap();
-    env.workspaces
-        .insert(workspace_name.clone(), EnvValues::new());
-    env.workspace_locs
-        .push((fs::canonicalize(dir)?, workspace_name));
+    args.insert(0, String::from("mkworkspace"));
+    let args = WorkspaceArgs::parse_from(args);
+    env.workspaces.insert(args.name.clone(), EnvValues::new());
+    env.workspace_locs.push(args);
     Ok(())
 }
 
