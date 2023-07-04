@@ -610,10 +610,22 @@ pub fn exit(env: &mut Env) {
 
 fn check_for_workspace(env: &mut Env) -> Result<(), Box<dyn Error>> {
     env.cur_workspace = vec![];
-    for workspace in &env.workspace_locs {
+    for workspace in &env.workspace_locs.clone() {
         if workspace.directory == Some(env::current_dir()?)
-            || (workspace.childs
+            || (workspace.children
                 && env::current_dir()?.starts_with(workspace.directory.as_ref().unwrap()))
+            || (workspace.function.is_some()
+                && run(
+                    workspace.function.as_ref().unwrap(),
+                    vec![],
+                    Stdio::null(),
+                    Stdio::null(),
+                    Stdio::null(),
+                    env,
+                )?
+                .unwrap()
+                .wait()?
+                .success())
         {
             env.cur_workspace.push(workspace.name.clone());
         }
@@ -779,7 +791,7 @@ fn bind(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 struct WorkspaceArgs {
     /// Name of the workspace
     name: String,
@@ -791,7 +803,11 @@ struct WorkspaceArgs {
     /// Decides whether or not children directories share the same workspace as their parent
     /// (defaults to false)
     #[arg(short, long, default_value_t = false)]
-    childs: bool,
+    children: bool,
+
+    /// Specific directory that activates a workspace
+    #[arg(short, long)]
+    function: Option<String>,
 }
 
 fn mkworkspace(env: &mut Env, mut args: Vec<String>) -> Result<(), Box<dyn Error>> {
