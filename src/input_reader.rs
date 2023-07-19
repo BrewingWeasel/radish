@@ -1,7 +1,7 @@
 use crokey::crossterm::{
     self,
     cursor::{MoveLeft, MoveRight, MoveToColumn},
-    event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{read, Event, KeyCode, KeyEvent},
     execute, queue,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear},
@@ -10,6 +10,11 @@ use std::{borrow::Cow, cmp::Ordering, collections::HashMap, fs::read_dir, io::st
 
 use crate::{exit, run_from_string};
 
+struct WritingEnv {
+    input: String,
+    chars_from_end: usize,
+}
+
 pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Option<String>) {
     #[derive(Debug)]
     enum CompletionType {
@@ -17,28 +22,33 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
         List,
         File,
     }
-    let builtin_modifiers = HashMap::from([(crokey::parse("alt-backspace").unwrap(), delete_word)]);
+    let mut builtin_modifiers: HashMap<KeyEvent, fn(&mut WritingEnv)> = HashMap::new();
+
+    builtin_modifiers.insert(crokey::parse("alt-backspace").unwrap(), delete_word);
+    builtin_modifiers.insert(crokey::parse("alt-left").unwrap(), back_word);
 
     let mut history_index = env.history.len();
-    let mut input = next_cmd.unwrap_or(String::new());
-    execute!(stdout(), Print(&input),).unwrap();
+    let mut writing_env = WritingEnv {
+        input: next_cmd.unwrap_or(String::new()),
+        chars_from_end: 0,
+    };
+    execute!(stdout(), Print(&writing_env.input),).unwrap();
     let mut in_quotes = false;
     let mut after_slash = false;
     let mut currently_completing = CompletionType::Command;
     let mut suggested_input: Option<&str> = None;
-    let mut chars_from_end: usize = 0;
 
     loop {
         if let Event::Key(x) = read().unwrap() {
             if let Some(func) = builtin_modifiers.get(&x) {
-                input = func(&input);
+                func(&mut writing_env);
             }
             if let Some((reset, cmd)) = env.get_bindings().get(&x) {
                 let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
                 if *reset {
                     execute!(stdout(), Print('\n')).unwrap();
-                    return (new_cmd, Some(input));
+                    return (new_cmd, Some(writing_env.input));
                 }
                 if let Err(e) = run_from_string(Cow::Owned(new_cmd), env, true, None) {
                     eprintln!("{e}");
@@ -49,7 +59,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                     KeyCode::Char(c) => {
                         if after_slash {
                             execute!(stdout(), Print(c), ResetColor).unwrap();
-                            input.push(c);
+                            writing_env.input.push(c);
                             after_slash = false;
                             continue;
                         }
@@ -86,52 +96,56 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                             }
                             _ => (),
                         }
-                        if chars_from_end != 0 {
-                            input.insert(input.chars().count() - chars_from_end, c);
-                            if chars_from_end != 0 {
+                        if writing_env.chars_from_end != 0 {
+                            writing_env.input.insert(
+                                writing_env.input.chars().count() - writing_env.chars_from_end,
+                                c,
+                            );
+                            if writing_env.chars_from_end != 0 {
                                 execute!(
                                     stdout(),
                                     Print(c),
                                     Clear(crossterm::terminal::ClearType::UntilNewLine),
                                     Print(
-                                        input
+                                        writing_env
+                                            .input
                                             .chars()
                                             .rev()
-                                            .take(chars_from_end)
+                                            .take(writing_env.chars_from_end)
                                             .collect::<String>()
                                             .chars()
                                             .rev()
                                             .collect::<String>()
                                     ),
-                                    MoveLeft(chars_from_end.try_into().unwrap())
+                                    MoveLeft(writing_env.chars_from_end.try_into().unwrap())
                                 )
                                 .unwrap();
                             }
                         } else {
                             execute!(stdout(), Print(c)).unwrap();
-                            input.push(c);
+                            writing_env.input.push(c);
                         }
                     }
 
                     KeyCode::Tab => {
                         let completing_values = match currently_completing {
                             CompletionType::Command => (
-                                get_backwards_until(&input, ' '),
+                                get_backwards_until(&writing_env.input, ' '),
                                 env.commands.iter().map(Cow::Borrowed).collect(),
                             ),
                             CompletionType::List => (
-                                get_backwards_until(&input, '%'),
+                                get_backwards_until(&writing_env.input, '%'),
                                 env.settings.lists.keys().map(Cow::Borrowed).collect(),
                             ),
                             CompletionType::File => {
-                                let file_name = get_backwards_until(&input, ' ');
+                                let file_name = get_backwards_until(&writing_env.input, ' ');
                                 let folder = if let Some((f, _)) = file_name.rsplit_once('/') {
                                     f
                                 } else {
                                     "./"
                                 };
                                 (
-                                    get_backwards_until(&input, ' '),
+                                    get_backwards_until(&writing_env.input, ' '),
                                     get_all_files(folder).into_iter().map(Cow::Owned).collect(),
                                 )
                             }
@@ -145,8 +159,8 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                                 Print(completion)
                             )
                             .unwrap();
-                            input.replace_range(
-                                input.len() - completing_values.0.len()..,
+                            writing_env.input.replace_range(
+                                writing_env.input.len() - completing_values.0.len()..,
                                 completion,
                             );
                         }
@@ -161,8 +175,8 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                         break;
                     }
                     KeyCode::Backspace => {
-                        if chars_from_end == 0 {
-                            if input.pop().is_some() {
+                        if writing_env.chars_from_end == 0 {
+                            if writing_env.input.pop().is_some() {
                                 execute!(
                                     stdout(),
                                     MoveLeft(1),
@@ -171,52 +185,60 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                                 .unwrap();
                             }
                         } else {
-                            input.remove(input.len() - chars_from_end);
+                            writing_env
+                                .input
+                                .remove(writing_env.input.len() - writing_env.chars_from_end);
                             execute!(
                                 stdout(),
                                 MoveLeft(1),
                                 Clear(crossterm::terminal::ClearType::UntilNewLine),
                                 Print(
-                                    input
+                                    writing_env
+                                        .input
                                         .chars()
                                         .rev()
-                                        .take(chars_from_end)
+                                        .take(writing_env.chars_from_end)
                                         .collect::<String>()
                                         .chars()
                                         .rev()
                                         .collect::<String>()
                                 ),
-                                MoveLeft(chars_from_end.try_into().unwrap()),
+                                MoveLeft(writing_env.chars_from_end.try_into().unwrap()),
                             )
                             .unwrap();
                         }
                     }
                     KeyCode::Right => {
-                        if suggested_input.is_some() && chars_from_end == 0 {
-                            let completion = suggested_input.unwrap().strip_prefix(&input).unwrap();
+                        if suggested_input.is_some() && writing_env.chars_from_end == 0 {
+                            let completion = suggested_input
+                                .unwrap()
+                                .strip_prefix(&writing_env.input)
+                                .unwrap();
                             execute!(
                                 stdout(),
                                 ResetColor,
                                 MoveToColumn(
-                                    env.prompt_length + u16::try_from(input.len()).unwrap()
+                                    env.prompt_length
+                                        + u16::try_from(writing_env.input.len()).unwrap()
                                 ),
                                 Clear(crossterm::terminal::ClearType::UntilNewLine),
                                 Print(completion),
                             )
                             .unwrap();
-                            input.push_str(completion)
+                            writing_env.input.push_str(completion)
                         } else {
-                            chars_from_end = if let Some(val) = chars_from_end.checked_sub(1) {
-                                execute!(stdout(), MoveRight(1)).unwrap();
-                                val
-                            } else {
-                                0
-                            }
+                            writing_env.chars_from_end =
+                                if let Some(val) = writing_env.chars_from_end.checked_sub(1) {
+                                    execute!(stdout(), MoveRight(1)).unwrap();
+                                    val
+                                } else {
+                                    0
+                                }
                         }
                     }
                     KeyCode::Left => {
-                        if chars_from_end < input.chars().count() {
-                            chars_from_end += 1;
+                        if writing_env.chars_from_end < writing_env.input.chars().count() {
+                            writing_env.chars_from_end += 1;
                             execute!(stdout(), MoveLeft(1)).unwrap();
                         }
                     }
@@ -234,7 +256,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                                 Print(inp)
                             )
                             .unwrap();
-                            input = inp.to_string();
+                            writing_env.input = inp.to_string();
                         } else {
                             history_index += 1;
                         }
@@ -250,7 +272,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                                 Print(inp)
                             )
                             .unwrap();
-                            input = inp.to_string();
+                            writing_env.input = inp.to_string();
                         } else {
                             history_index -= 1;
                             execute!(
@@ -259,7 +281,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                                 Clear(crossterm::terminal::ClearType::UntilNewLine),
                             )
                             .unwrap();
-                            input = String::new();
+                            writing_env.input = String::new();
                         }
                     }
                     _ => (),
@@ -267,24 +289,24 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
             }
         }
 
-        suggested_input = suggest(&input, &env.sorted_history);
+        suggested_input = suggest(&writing_env.input, &env.sorted_history);
         if let Some(mut completion) = suggested_input {
-            completion = if let Some(completion) = completion.strip_prefix(&input) {
+            completion = if let Some(completion) = completion.strip_prefix(&writing_env.input) {
                 completion
             } else {
                 continue;
             };
             execute!(
                 stdout(),
-                MoveToColumn(env.prompt_length + u16::try_from(input.len()).unwrap()),
+                MoveToColumn(env.prompt_length + u16::try_from(writing_env.input.len()).unwrap()),
                 Clear(crossterm::terminal::ClearType::UntilNewLine),
                 SetForegroundColor(Color::Cyan),
                 Print(completion),
-                MoveToColumn(env.prompt_length + u16::try_from(input.len()).unwrap()),
+                MoveToColumn(env.prompt_length + u16::try_from(writing_env.input.len()).unwrap()),
                 ResetColor
             )
             .unwrap();
-        } else if chars_from_end == 0 {
+        } else if writing_env.chars_from_end == 0 {
             queue!(
                 stdout(),
                 Clear(crossterm::terminal::ClearType::UntilNewLine)
@@ -292,7 +314,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
             .unwrap();
         }
     }
-    (input, None)
+    (writing_env.input, None)
 }
 
 fn get_backwards_until(input: &str, until: char) -> String {
@@ -374,14 +396,20 @@ fn get_all_files(dir: &str) -> Vec<String> {
         .collect()
 }
 
-fn delete_word(input: &str) -> String {
-    let conts_of_word = get_backwards_until(&input, ' ');
-    let new_input = input[..input.len() - conts_of_word.len()].to_string();
+fn delete_word(writing_env: &mut WritingEnv) {
+    let conts_of_word = get_backwards_until(&writing_env.input, ' ');
+    writing_env.input =
+        writing_env.input[..writing_env.input.len() - conts_of_word.len()].to_string();
     execute!(
         stdout(),
         MoveLeft(conts_of_word.len().try_into().unwrap()),
         Clear(crossterm::terminal::ClearType::UntilNewLine),
     )
     .unwrap();
-    new_input
+}
+
+fn back_word(writing_env: &mut WritingEnv) {
+    let conts_of_word = get_backwards_until(&writing_env.input, ' ');
+    writing_env.chars_from_end += conts_of_word.len();
+    execute!(stdout(), MoveLeft(conts_of_word.len().try_into().unwrap()),).unwrap();
 }
