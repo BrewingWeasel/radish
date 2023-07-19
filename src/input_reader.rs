@@ -26,6 +26,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
 
     builtin_modifiers.insert(crokey::parse("alt-backspace").unwrap(), delete_word);
     builtin_modifiers.insert(crokey::parse("alt-left").unwrap(), back_word);
+    builtin_modifiers.insert(crokey::parse("alt-right").unwrap(), forward_word);
 
     let mut history_index = env.history.len();
     let mut writing_env = WritingEnv {
@@ -329,6 +330,15 @@ fn get_backwards_until(input: &str, until: char) -> String {
         .collect()
 }
 
+fn get_forward_until(input: &str, until: char) -> String {
+    //TODO: probably make this use traits and clean this up
+    input
+        .chars()
+        .rev()
+        .take_while(|x| *x != until)
+        .collect::<String>()
+}
+
 fn suggest<'a>(input: &str, options: &'a Vec<Cow<String>>) -> Option<&'a str> {
     if options.len() == 1 {
         return Some(&options[0]);
@@ -412,4 +422,10 @@ fn back_word(writing_env: &mut WritingEnv) {
     let conts_of_word = get_backwards_until(&writing_env.input, ' ');
     writing_env.chars_from_end += conts_of_word.len();
     execute!(stdout(), MoveLeft(conts_of_word.len().try_into().unwrap()),).unwrap();
+}
+
+fn forward_word(writing_env: &mut WritingEnv) {
+    let conts_of_word = get_forward_until(&writing_env.input, ' ');
+    writing_env.chars_from_end -= conts_of_word.len();
+    execute!(stdout(), MoveRight(conts_of_word.len().try_into().unwrap()),).unwrap();
 }
