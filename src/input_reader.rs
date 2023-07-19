@@ -420,12 +420,16 @@ fn delete_word(writing_env: &mut WritingEnv) {
 
 fn back_word(writing_env: &mut WritingEnv) {
     let conts_of_word = get_backwards_until(&writing_env.input, ' ');
-    writing_env.chars_from_end += conts_of_word.len();
-    execute!(stdout(), MoveLeft(conts_of_word.len().try_into().unwrap()),).unwrap();
+    if writing_env.chars_from_end != writing_env.input.len() {
+        writing_env.chars_from_end += conts_of_word.len();
+        execute!(stdout(), MoveLeft(conts_of_word.len().try_into().unwrap()),).unwrap();
+    }
 }
 
 fn forward_word(writing_env: &mut WritingEnv) {
     let conts_of_word = get_forward_until(&writing_env.input, ' ');
-    writing_env.chars_from_end -= conts_of_word.len();
-    execute!(stdout(), MoveRight(conts_of_word.len().try_into().unwrap()),).unwrap();
+    if writing_env.chars_from_end != 0 {
+        writing_env.chars_from_end -= conts_of_word.len();
+        execute!(stdout(), MoveRight(conts_of_word.len().try_into().unwrap()),).unwrap();
+    }
 }
