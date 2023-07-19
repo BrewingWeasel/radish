@@ -157,8 +157,15 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                         break;
                     }
                     KeyCode::Backspace => {
-                        if x.modifiers.contains(KeyModifiers::CONTROL) {
-                            // TODO: add ctrl delete
+                        if x.modifiers.contains(KeyModifiers::ALT) {
+                            let conts_of_word = get_backwards_until(&input, ' ');
+                            input = input[..input.len() - conts_of_word.len() - 1].to_string();
+                            execute!(
+                                stdout(),
+                                MoveLeft(conts_of_word.len().try_into().unwrap()),
+                                Clear(crossterm::terminal::ClearType::UntilNewLine),
+                            )
+                            .unwrap();
                         } else if chars_from_end == 0 {
                             if input.pop().is_some() {
                                 execute!(
