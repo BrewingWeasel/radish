@@ -1,12 +1,12 @@
 use crokey::crossterm::{
     self,
     cursor::{MoveLeft, MoveRight, MoveToColumn},
-    event::{read, Event, KeyCode, KeyModifiers},
+    event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
     execute, queue,
     style::{Color, Print, ResetColor, SetForegroundColor},
     terminal::{disable_raw_mode, enable_raw_mode, Clear},
 };
-use std::{borrow::Cow, cmp::Ordering, fs::read_dir, io::stdout};
+use std::{borrow::Cow, cmp::Ordering, collections::HashMap, fs::read_dir, io::stdout};
 
 use crate::{exit, run_from_string};
 
@@ -17,6 +17,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
         List,
         File,
     }
+    let builtin_modifiers = HashMap::from([(crokey::parse("alt-backspace").unwrap(), delete_word)]);
 
     let mut history_index = env.history.len();
     let mut input = next_cmd.unwrap_or(String::new());
@@ -29,6 +30,9 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
 
     loop {
         if let Event::Key(x) = read().unwrap() {
+            if let Some(func) = builtin_modifiers.get(&x) {
+                input = func(&input);
+            }
             if let Some((reset, cmd)) = env.get_bindings().get(&x) {
                 let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
@@ -157,16 +161,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
                         break;
                     }
                     KeyCode::Backspace => {
-                        if x.modifiers.contains(KeyModifiers::ALT) {
-                            let conts_of_word = get_backwards_until(&input, ' ');
-                            input = input[..input.len() - conts_of_word.len() - 1].to_string();
-                            execute!(
-                                stdout(),
-                                MoveLeft(conts_of_word.len().try_into().unwrap()),
-                                Clear(crossterm::terminal::ClearType::UntilNewLine),
-                            )
-                            .unwrap();
-                        } else if chars_from_end == 0 {
+                        if chars_from_end == 0 {
                             if input.pop().is_some() {
                                 execute!(
                                     stdout(),
@@ -377,4 +372,16 @@ fn get_all_files(dir: &str) -> Vec<String> {
             path.strip_prefix("./").unwrap_or(&path).to_owned()
         })
         .collect()
+}
+
+fn delete_word(input: &str) -> String {
+    let conts_of_word = get_backwards_until(&input, ' ');
+    let new_input = input[..input.len() - conts_of_word.len()].to_string();
+    execute!(
+        stdout(),
+        MoveLeft(conts_of_word.len().try_into().unwrap()),
+        Clear(crossterm::terminal::ClearType::UntilNewLine),
+    )
+    .unwrap();
+    new_input
 }
