@@ -13,6 +13,7 @@ use crate::{exit, run_from_string};
 struct WritingEnv {
     input: String,
     chars_from_end: usize,
+    prompt_length: u16,
 }
 
 pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Option<String>) {
@@ -27,11 +28,14 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
     builtin_modifiers.insert(crokey::parse("alt-backspace").unwrap(), delete_word);
     builtin_modifiers.insert(crokey::parse("alt-left").unwrap(), back_word);
     builtin_modifiers.insert(crokey::parse("alt-right").unwrap(), forward_word);
+    builtin_modifiers.insert(crokey::parse("alt-a").unwrap(), start_of_line);
+    builtin_modifiers.insert(crokey::parse("alt-e").unwrap(), end_of_line);
 
     let mut history_index = env.history.len();
     let mut writing_env = WritingEnv {
         input: next_cmd.unwrap_or(String::new()),
         chars_from_end: 0,
+        prompt_length: env.prompt_length,
     };
     execute!(stdout(), Print(&writing_env.input),).unwrap();
     let mut in_quotes = false;
@@ -43,8 +47,7 @@ pub fn get_input(env: &mut crate::Env, next_cmd: Option<String>) -> (String, Opt
         if let Event::Key(x) = read().unwrap() {
             if let Some(func) = builtin_modifiers.get(&x) {
                 func(&mut writing_env);
-            }
-            if let Some((reset, cmd)) = env.get_bindings().get(&x) {
+            } else if let Some((reset, cmd)) = env.get_bindings().get(&x) {
                 let new_cmd = cmd.to_owned();
                 disable_raw_mode().unwrap();
                 if *reset {
@@ -407,15 +410,19 @@ fn get_all_files(dir: &str) -> Vec<String> {
 }
 
 fn delete_word(writing_env: &mut WritingEnv) {
-    let conts_of_word = get_backwards_until(&writing_env.input, ' ');
-    writing_env.input =
-        writing_env.input[..writing_env.input.len() - conts_of_word.len()].to_string();
-    execute!(
-        stdout(),
-        MoveLeft(conts_of_word.len().try_into().unwrap()),
-        Clear(crossterm::terminal::ClearType::UntilNewLine),
-    )
-    .unwrap();
+    if writing_env.input.len() != 0 {
+        let conts_of_word = get_backwards_until(&writing_env.input, ' ');
+        let length = (writing_env.input.len() - conts_of_word.len())
+            .checked_sub(1)
+            .unwrap_or(0);
+        writing_env.input = writing_env.input[..length].to_string();
+        execute!(
+            stdout(),
+            MoveToColumn(writing_env.prompt_length + length as u16),
+            Clear(crossterm::terminal::ClearType::UntilNewLine),
+        )
+        .unwrap();
+    }
 }
 
 fn back_word(writing_env: &mut WritingEnv) {
@@ -432,4 +439,18 @@ fn forward_word(writing_env: &mut WritingEnv) {
         writing_env.chars_from_end -= conts_of_word.len();
         execute!(stdout(), MoveRight(conts_of_word.len().try_into().unwrap()),).unwrap();
     }
+}
+
+fn end_of_line(writing_env: &mut WritingEnv) {
+    writing_env.chars_from_end = 0;
+    execute!(
+        stdout(),
+        MoveToColumn(writing_env.input.len() as u16 + writing_env.prompt_length),
+    )
+    .unwrap();
+}
+
+fn start_of_line(writing_env: &mut WritingEnv) {
+    writing_env.chars_from_end = writing_env.input.len();
+    execute!(stdout(), MoveToColumn(writing_env.prompt_length as u16),).unwrap();
 }
