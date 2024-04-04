@@ -2,6 +2,7 @@ import gleam/io
 import gleam/string
 import gleam/result
 import gleam/list
+import gleam/erlang
 
 pub type Ast {
   Call(List(Ast))
@@ -11,12 +12,11 @@ pub type Ast {
 }
 
 pub fn main() {
-  parse_expression("(echo bad)")
+  erlang.get_line("> ")
+  |> result.unwrap("")
+  |> parse_expression()
   |> io.debug()
-  parse_expression(
-    "(echo [(echo \"lol hi there\") thingy other_thing] \"is bad\")",
-  )
-  |> io.debug()
+  main()
 }
 
 pub type ParseError {
