@@ -1,6 +1,6 @@
 import gleam/io
 import gleam/bool
-import parser.{BracketList, Call, Number, StrVal, UnquotedStr}
+import parser.{BracketList, Call, Number, StrVal, UnquotedStr, Variable}
 import interpreter.{
   type RanExpression, type RuntimeError, type State, type Value, RadishInt,
   RadishList, RadishStr, RanExpression, Void,
@@ -30,6 +30,13 @@ pub fn run_expression(
       )
     StrVal(s) | UnquotedStr(s) -> RanExpression(Ok(RadishStr(s)), state)
     Number(i) -> RanExpression(Ok(RadishInt(i)), state)
+    Variable(v) ->
+      RanExpression(
+        returned: state.variables
+          |> dict.get(v)
+          |> result.replace_error(interpreter.NonexistentVariable),
+        with: state,
+      )
     BracketList(l) ->
       l
       |> interpreter.map(state, run_expression)

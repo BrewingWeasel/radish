@@ -9,6 +9,7 @@ pub type RuntimeError {
   IncorrectType
   CommandError
   MissingArgument
+  NonexistentVariable
 }
 
 pub type SyntaxError {

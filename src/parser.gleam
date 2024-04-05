@@ -5,6 +5,7 @@ import gleam/int
 pub type Ast {
   Call(contents: List(Ast), piped: Bool)
   StrVal(String)
+  Variable(String)
   BracketList(List(Ast))
   UnquotedStr(String)
   Number(Int)
@@ -37,12 +38,18 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
     }
     v -> {
       use atom <- result.try(parse_atom(v))
-      Ok(
-        Parsing(atom.remaining, case int.parse(atom.value) {
-          Ok(i) -> Number(i)
-          Error(Nil) -> UnquotedStr(atom.value)
-        }),
-      )
+      Ok(Parsing(
+        atom.remaining,
+        int.parse(atom.value)
+          |> result.map(Number)
+          |> result.try_recover(fn(_) {
+            case string.pop_grapheme(atom.value) {
+              Ok(#("$", var_name)) -> Ok(Variable(var_name))
+              _ -> Error(Nil)
+            }
+          })
+          |> result.unwrap(UnquotedStr(atom.value)),
+      ))
     }
   }
 }
