@@ -63,7 +63,7 @@ fn parse_atom(input: String) -> Result(Parsing(String), ParseError) {
       use parsed_atom <- result.try(parse_atom(rest))
       Ok(Parsing(parsed_atom.remaining, c <> parsed_atom.value))
     }
-    Error(Nil) -> Error(UnexpectedFileEnd)
+    Error(Nil) -> Ok(Parsing("", ""))
   }
 }
 
