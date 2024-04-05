@@ -199,6 +199,8 @@ fn call_func(
 ) -> Result(Value, RuntimeError) {
   case func {
     "+" -> apply_int_func_to_args(args, int.add)
+    "-" -> apply_int_func_to_args(args, int.subtract)
+    "*" -> apply_int_func_to_args(args, int.multiply)
     _ -> {
       use arg_strings <- result.try(get_string_from_args(args))
 
