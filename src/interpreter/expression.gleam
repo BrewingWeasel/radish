@@ -74,6 +74,14 @@ pub fn call_func(
       generate_bool_from_args(state, args, fn(v1, v2) { v1 == v2 }, do_gen_bool)
     "!=" ->
       generate_bool_from_args(state, args, fn(v1, v2) { v1 != v2 }, do_gen_bool)
+    ">" ->
+      generate_bool_from_args(state, args, fn(v1, v2) { v1 > v2 }, do_gen_bool)
+    "<" ->
+      generate_bool_from_args(state, args, fn(v1, v2) { v1 < v2 }, do_gen_bool)
+    ">=" ->
+      generate_bool_from_args(state, args, fn(v1, v2) { v1 >= v2 }, do_gen_bool)
+    "<=" ->
+      generate_bool_from_args(state, args, fn(v1, v2) { v1 <= v2 }, do_gen_bool)
     _ -> {
       use arg_strings, state <- interpreter.try(get_string_from_args(
         state,
@@ -199,6 +207,7 @@ pub fn generate_bool_from_args(
   }
 }
 
+/// generic function that only works if all types are supported
 fn do_gen_bool(
   windows: List(List(Value)),
   predicate,
