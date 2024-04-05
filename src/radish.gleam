@@ -5,6 +5,7 @@ import gleam/erlang
 import gleam/list
 import shellout
 import gleam/bool
+import gleam/int
 
 // TODO: try_map throughout
 
@@ -13,6 +14,7 @@ pub type Ast {
   StrVal(String)
   BracketList(List(Ast))
   UnquotedStr(String)
+  Number(Int)
 }
 
 pub fn main() {
@@ -51,7 +53,12 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
     }
     v -> {
       use atom <- result.try(parse_atom(v))
-      Ok(Parsing(atom.remaining, UnquotedStr(atom.value)))
+      Ok(
+        Parsing(atom.remaining, case int.parse(atom.value) {
+          Ok(i) -> Number(i)
+          Error(Nil) -> UnquotedStr(atom.value)
+        }),
+      )
     }
   }
 }
@@ -137,6 +144,7 @@ pub type SyntaxError {
 pub type Value {
   RadishStr(String)
   RadishList(List(Value))
+  RadishInt(Int)
   Void
 }
 
@@ -146,6 +154,7 @@ fn run_expression(expression: Ast) -> Result(Value, RuntimeError) {
     Call([_, ..], _) -> Error(InvalidSyntax(InvalidFuncToCall))
     Call([], _) -> Error(InvalidSyntax(NoFuncToCall))
     StrVal(s) | UnquotedStr(s) -> Ok(RadishStr(s))
+    Number(i) -> Ok(RadishInt(i))
     BracketList(l) ->
       l
       |> list.map(run_expression)
@@ -157,6 +166,7 @@ fn run_expression(expression: Ast) -> Result(Value, RuntimeError) {
 fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
   case value {
     RadishStr(s) -> Ok([s])
+    RadishInt(s) -> Ok([int.to_string(s)])
     RadishList(v) -> {
       v
       |> list.map(get_string_from_value)
@@ -186,7 +196,22 @@ fn call_func(
   piped: Bool,
 ) -> Result(Value, RuntimeError) {
   case func {
-    custom -> {
+    "+" -> {
+      use arg_values <- result.try(
+        args
+        |> list.map(run_expression)
+        |> result.all(),
+      )
+      arg_values
+      |> list.try_map(fn(x) {
+        case x {
+          RadishInt(i) -> Ok(i)
+          _ -> Error(ExpectedValue)
+        }
+      })
+      |> result.map(fn(x) { RadishInt(int.sum(x)) })
+    }
+    _custom -> {
       use arg_strings <- result.try(get_string_from_args(args))
 
       let output =
