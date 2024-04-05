@@ -133,7 +133,9 @@ fn do_parse_string(input: List(String)) -> Result(Parsing(String), ParseError) {
 pub type RuntimeError {
   InvalidSyntax(SyntaxError)
   ExpectedValue
+  IncorrectType
   CommandError
+  MissingArgument
 }
 
 pub type SyntaxError {
@@ -196,22 +198,8 @@ fn call_func(
   piped: Bool,
 ) -> Result(Value, RuntimeError) {
   case func {
-    "+" -> {
-      use arg_values <- result.try(
-        args
-        |> list.map(run_expression)
-        |> result.all(),
-      )
-      arg_values
-      |> list.try_map(fn(x) {
-        case x {
-          RadishInt(i) -> Ok(i)
-          _ -> Error(ExpectedValue)
-        }
-      })
-      |> result.map(fn(x) { RadishInt(int.sum(x)) })
-    }
-    _custom -> {
+    "+" -> apply_int_func_to_args(args, int.add)
+    _ -> {
       use arg_strings <- result.try(get_string_from_args(args))
 
       let output =
@@ -228,4 +216,39 @@ fn call_func(
       Ok(Void)
     }
   }
+}
+
+fn apply_int_func_to_args(args, func) -> Result(Value, RuntimeError) {
+  apply_func_to_args(
+    args,
+    fn(x) {
+      case x {
+        RadishInt(v) -> Ok(v)
+        _ -> Error(IncorrectType)
+      }
+    },
+    func,
+    RadishInt,
+  )
+}
+
+fn apply_func_to_args(
+  args: List(Ast),
+  handle_type: fn(Value) -> Result(a, RuntimeError),
+  func: fn(a, a) -> a,
+  final_type: fn(a) -> Value,
+) -> Result(Value, RuntimeError) {
+  use arg_values <- result.try(
+    args
+    |> list.map(run_expression)
+    |> result.all(),
+  )
+  arg_values
+  |> list.try_map(handle_type)
+  |> result.try(fn(args) {
+    args
+    |> list.reduce(func)
+    |> result.replace_error(MissingArgument)
+    |> result.map(final_type)
+  })
 }
