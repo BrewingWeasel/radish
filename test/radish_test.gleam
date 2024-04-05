@@ -40,6 +40,26 @@ pub fn parse_expr2_test() {
   ))
 }
 
+pub fn parse_expr3_test() {
+  "(echo $x)"
+  |> parser.parse_expression()
+  |> should.be_ok()
+  |> should.equal(parser.Parsing(
+    "",
+    parser.Call(
+      [parser.UnquotedStr("echo"), parser.Variable("x")],
+      piped: False,
+    ),
+  ))
+}
+
+pub fn parse_variable_expression_test() {
+  "$cat"
+  |> parser.parse_expression()
+  |> should.be_ok()
+  |> should.equal(parser.Parsing("", parser.Variable("cat")))
+}
+
 pub fn parse_call_from_expression_test() {
   "(echo hi)"
   |> parser.parse_expression()
