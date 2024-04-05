@@ -70,7 +70,7 @@ fn do_parse_list(
   input: String,
   ending: String,
 ) -> Result(Parsing(List(Ast)), ParseError) {
-  case string.pop_grapheme(input) {
+  case string.pop_grapheme(string.trim_left(input)) {
     Ok(#(v, rest)) if v == ending -> Ok(Parsing(rest, []))
     Ok(_) -> {
       use cur_elem <- result.try(parse_expression(input))
