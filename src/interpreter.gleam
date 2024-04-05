@@ -1,7 +1,7 @@
-import interpreter/state
 import parser
 import gleam/list
 import gleam/result
+import gleam/dict.{type Dict}
 
 pub type RuntimeError {
   InvalidSyntax(SyntaxError)
@@ -23,14 +23,22 @@ pub type Value {
   Void
 }
 
+pub type State {
+  State(variables: Dict(String, Value))
+}
+
+pub fn new_state() -> State {
+  State(variables: dict.new())
+}
+
 pub type RanExpression(t) {
-  RanExpression(returned: Result(t, RuntimeError), with: state.State)
+  RanExpression(returned: Result(t, RuntimeError), with: State)
 }
 
 pub fn map(
   args: List(parser.Ast),
-  state: state.State,
-  func: fn(state.State, parser.Ast) -> RanExpression(t),
+  state: State,
+  func: fn(State, parser.Ast) -> RanExpression(t),
 ) -> RanExpression(List(t)) {
   let #(value, state) =
     list.fold(over: args, from: #(Ok([]), state), with: fn(acc, elem) {
@@ -55,7 +63,7 @@ pub fn map(
 
 pub fn try(
   value: RanExpression(a),
-  handle: fn(a, state.State) -> RanExpression(b),
+  handle: fn(a, State) -> RanExpression(b),
 ) -> RanExpression(b) {
   case value {
     RanExpression(returned: Ok(v), with: state) -> handle(v, state)

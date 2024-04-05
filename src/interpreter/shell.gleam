@@ -1,16 +1,15 @@
 import gleam/otp/actor
 import gleam/erlang/process.{type Subject}
 import parser
-import interpreter.{type RuntimeError, type Value}
+import interpreter.{type RuntimeError, type State, type Value}
 import interpreter/expression
-import interpreter/state.{type State}
 
 const timeout: Int = 5_000_000
 
 // TODO: what should the timeout be?
 
 pub fn new() -> Result(Subject(Message), actor.StartError) {
-  actor.start(state.new(), handle_message)
+  actor.start(interpreter.new_state(), handle_message)
 }
 
 pub fn run_command(

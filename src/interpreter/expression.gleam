@@ -2,14 +2,14 @@ import gleam/io
 import gleam/bool
 import parser.{BracketList, Call, Number, StrVal, UnquotedStr}
 import interpreter.{
-  type RanExpression, type RuntimeError, type Value, RadishInt, RadishList,
-  RadishStr, RanExpression, Void,
+  type RanExpression, type RuntimeError, type State, type Value, RadishInt,
+  RadishList, RadishStr, RanExpression, Void,
 }
-import interpreter/state.{type State}
 import gleam/int
 import gleam/list
 import gleam/result
 import shellout
+import gleam/dict
 
 pub fn run_expression(
   state: State,
@@ -44,6 +44,22 @@ pub fn call_func(
   piped: Bool,
 ) -> RanExpression(Value) {
   case func {
+    "set" -> {
+      use #(var_name, value), state <- interpreter.try(case args {
+        [UnquotedStr(variable_name), ast] -> {
+          use val, state <- interpreter.try(run_expression(state, ast))
+          RanExpression(Ok(#(variable_name, val)), state)
+        }
+        _ -> RanExpression(Error(interpreter.IncorrectType), state)
+      })
+      RanExpression(
+        Ok(Void),
+        interpreter.State(
+          ..state,
+          variables: dict.insert(state.variables, var_name, value),
+        ),
+      )
+    }
     "+" -> apply_int_func_to_args(state, args, int.add)
     "-" -> apply_int_func_to_args(state, args, int.subtract)
     "*" -> apply_int_func_to_args(state, args, int.multiply)
