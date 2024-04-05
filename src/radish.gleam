@@ -2,6 +2,10 @@ import gleam/io
 import gleam/string
 import gleam/result
 import gleam/erlang
+import gleam/list
+import shellout
+
+// TODO: try_map throughout
 
 pub type Ast {
   Call(List(Ast))
@@ -14,6 +18,7 @@ pub fn main() {
   erlang.get_line("> ")
   |> result.unwrap("")
   |> parse_expression()
+  |> result.map(fn(p) { run_expression(p.value) })
   |> io.debug()
   main()
 }
@@ -110,5 +115,84 @@ fn do_parse_string(input: List(String)) -> Result(Parsing(String), ParseError) {
       Ok(Parsing(remaining: next_part.remaining, value: v <> next_part.value))
     }
     [] -> Error(MissingQuote)
+  }
+}
+
+pub type RuntimeError {
+  InvalidSyntax(SyntaxError)
+  ExpectedValue
+}
+
+pub type SyntaxError {
+  InvalidFuncToCall
+  NoFuncToCall
+}
+
+pub type Value {
+  RadishStr(String)
+  RadishList(List(Value))
+  Void
+}
+
+fn run_expression(expression: Ast) -> Result(Value, RuntimeError) {
+  case expression {
+    Call([UnquotedStr(func), ..args]) -> call_func(func, args)
+    Call([_, ..]) -> Error(InvalidSyntax(InvalidFuncToCall))
+    Call([]) -> Error(InvalidSyntax(NoFuncToCall))
+    StrVal(s) | UnquotedStr(s) -> Ok(RadishStr(s))
+    BracketList(l) ->
+      l
+      |> list.map(run_expression)
+      |> result.all()
+      |> result.map(RadishList)
+    _ -> todo
+  }
+}
+
+fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
+  case value {
+    RadishStr(s) -> Ok([s])
+    RadishList(v) -> {
+      v
+      |> list.map(get_string_from_value)
+      |> result.all()
+      |> result.map(list.concat)
+    }
+    Void -> Error(ExpectedValue)
+  }
+}
+
+fn call_func(func: String, args: List(Ast)) -> Result(Value, RuntimeError) {
+  case func {
+    custom -> {
+      // use arg_values <-  result.try(result.all(list.map(args, run_expression)))
+      use arg_values <- result.try(
+        args
+        |> list.map(run_expression)
+        |> result.all(),
+      )
+
+      use arg_strings <- result.try(
+        arg_values
+        |> list.map(get_string_from_value)
+        |> result.all(),
+      )
+
+      case
+        shellout.command(
+          run: func,
+          with: list.concat(arg_strings),
+          in: ".",
+          opt: [],
+        )
+      {
+        Ok(s) -> io.println(s)
+        Error(e) -> {
+          io.debug(e)
+          Nil
+        }
+      }
+      Ok(Void)
+    }
   }
 }
