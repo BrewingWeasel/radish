@@ -2,7 +2,8 @@ import gleam/io
 import gleam/bool
 import parser.{BracketList, Call, Number, StrVal, UnquotedStr}
 import interpreter.{
-  type RuntimeError, type Value, RadishInt, RadishList, RadishStr, Void,
+  type RanExpression, type RuntimeError, type Value, RadishInt, RadishList,
+  RadishStr, RanExpression, Void,
 }
 import interpreter/state.{type State}
 import gleam/int
@@ -13,20 +14,26 @@ import shellout
 pub fn run_expression(
   state: State,
   expression: parser.Ast,
-) -> Result(Value, RuntimeError) {
+) -> RanExpression(Value) {
   case expression {
     Call([UnquotedStr(func), ..args], piped) ->
       call_func(state, func, args, piped)
     Call([_, ..], _) ->
-      Error(interpreter.InvalidSyntax(interpreter.InvalidFuncToCall))
-    Call([], _) -> Error(interpreter.InvalidSyntax(interpreter.NoFuncToCall))
-    StrVal(s) | UnquotedStr(s) -> Ok(RadishStr(s))
-    Number(i) -> Ok(RadishInt(i))
+      RanExpression(
+        Error(interpreter.InvalidSyntax(interpreter.InvalidFuncToCall)),
+        state,
+      )
+    Call([], _) ->
+      RanExpression(
+        Error(interpreter.InvalidSyntax(interpreter.NoFuncToCall)),
+        state,
+      )
+    StrVal(s) | UnquotedStr(s) -> RanExpression(Ok(RadishStr(s)), state)
+    Number(i) -> RanExpression(Ok(RadishInt(i)), state)
     BracketList(l) ->
       l
-      |> list.map(run_expression(state, _))
-      |> result.all()
-      |> result.map(RadishList)
+      |> interpreter.map(state, run_expression)
+      |> interpreter.map_result(RadishList)
   }
 }
 
@@ -35,18 +42,25 @@ pub fn call_func(
   func: String,
   args: List(parser.Ast),
   piped: Bool,
-) -> Result(Value, RuntimeError) {
+) -> RanExpression(Value) {
   case func {
     "+" -> apply_int_func_to_args(state, args, int.add)
     "-" -> apply_int_func_to_args(state, args, int.subtract)
     "*" -> apply_int_func_to_args(state, args, int.multiply)
     _ -> {
-      use arg_strings <- result.try(get_string_from_args(state, args))
+      use arg_strings, state <- interpreter.try(get_string_from_args(
+        state,
+        args,
+      ))
 
       let output =
         shellout.command(run: func, with: arg_strings, in: ".", opt: [])
         |> result.replace_error(interpreter.CommandError)
-      use <- bool.guard(when: piped, return: result.map(output, RadishStr))
+
+      use <- bool.guard(
+        when: piped,
+        return: RanExpression(result.map(output, RadishStr), state),
+      )
       case output {
         Ok(str) -> io.println(str)
         Error(e) -> {
@@ -54,7 +68,7 @@ pub fn call_func(
           Nil
         }
       }
-      Ok(Void)
+      RanExpression(Ok(Void), state)
     }
   }
 }
@@ -76,24 +90,26 @@ pub fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError)
 pub fn get_string_from_args(
   state: State,
   args: List(parser.Ast),
-) -> Result(List(String), RuntimeError) {
-  use arg_values <- result.try(
+) -> RanExpression(List(String)) {
+  use arg_values, state <- interpreter.try(
     args
-    |> list.map(run_expression(state, _))
-    |> result.all(),
+    |> interpreter.map(state, run_expression),
   )
 
-  arg_values
-  |> list.map(get_string_from_value)
-  |> result.all()
-  |> result.map(list.concat)
+  RanExpression(
+    returned: arg_values
+      |> list.map(get_string_from_value)
+      |> result.all()
+      |> result.map(list.concat),
+    with: state,
+  )
 }
 
 pub fn apply_int_func_to_args(
   state: State,
   args: List(parser.Ast),
   func: fn(Int, Int) -> Int,
-) -> Result(Value, RuntimeError) {
+) -> RanExpression(Value) {
   apply_func_to_args(
     state,
     args,
@@ -114,18 +130,21 @@ pub fn apply_func_to_args(
   handle_type: fn(Value) -> Result(a, RuntimeError),
   func: fn(a, a) -> a,
   final_type: fn(a) -> Value,
-) -> Result(Value, RuntimeError) {
-  use arg_values <- result.try(
+) -> RanExpression(Value) {
+  use arg_values, state <- interpreter.try(
     args
-    |> list.map(run_expression(state, _))
-    |> result.all(),
+    |> interpreter.map(state, run_expression),
   )
-  arg_values
-  |> list.try_map(handle_type)
-  |> result.try(fn(args) {
-    args
-    |> list.reduce(func)
-    |> result.replace_error(interpreter.MissingArgument)
-    |> result.map(final_type)
-  })
+
+  case list.try_map(arg_values, handle_type) {
+    Error(e) -> RanExpression(returned: Error(e), with: state)
+    Ok(v) ->
+      RanExpression(
+        returned: v
+          |> list.reduce(func)
+          |> result.replace_error(interpreter.MissingArgument)
+          |> result.map(final_type),
+        with: state,
+      )
+  }
 }

@@ -32,8 +32,9 @@ pub type Message {
 fn handle_message(message: Message, state: State) -> actor.Next(Message, State) {
   case message {
     RunCommand(ast, client) -> {
-      actor.send(client, expression.run_expression(state, ast))
-      actor.continue(state)
+      let response = expression.run_expression(state, ast)
+      actor.send(client, response.returned)
+      actor.continue(response.with)
     }
     Kill -> actor.Stop(process.Normal)
   }
