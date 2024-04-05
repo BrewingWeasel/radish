@@ -21,6 +21,7 @@ pub type Value {
   RadishStr(String)
   RadishList(List(Value))
   RadishInt(Int)
+  RadishBool(Bool)
   Void
 }
 
