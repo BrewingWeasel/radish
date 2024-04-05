@@ -1,7 +1,6 @@
 import gleam/io
 import gleam/string
 import gleam/result
-import gleam/list
 import gleam/erlang
 
 pub type Ast {
@@ -59,12 +58,12 @@ fn parse_atom(input: String) -> Result(Parsing(String), ParseError) {
   }
 }
 
-fn parse_list(
+pub fn parse_list(
   input: String,
   ending: String,
 ) -> Result(Parsing(List(Ast)), ParseError) {
   use parsed_list <- result.try(do_parse_list(input, ending))
-  Ok(Parsing(parsed_list.remaining, list.reverse(parsed_list.value)))
+  Ok(Parsing(parsed_list.remaining, parsed_list.value))
 }
 
 fn do_parse_list(
@@ -82,7 +81,7 @@ fn do_parse_list(
   }
 }
 
-fn parse_string(input: String) -> Result(Parsing(Ast), ParseError) {
+pub fn parse_string(input: String) -> Result(Parsing(Ast), ParseError) {
   use next_part <- result.try(do_parse_string(string.to_graphemes(input)))
   Ok(Parsing(value: StrVal(next_part.value), remaining: next_part.remaining))
 }
