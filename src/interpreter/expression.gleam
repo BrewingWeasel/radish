@@ -70,8 +70,10 @@ pub fn call_func(
     "+" -> apply_int_func_to_args(state, args, int.add)
     "-" -> apply_int_func_to_args(state, args, int.subtract)
     "*" -> apply_int_func_to_args(state, args, int.multiply)
-    "==" -> generate_bool_from_args(state, args, fn(v1, v2) { v1 == v2 })
-    "!=" -> generate_bool_from_args(state, args, fn(v1, v2) { v1 != v2 })
+    "==" ->
+      generate_bool_from_args(state, args, fn(v1, v2) { v1 == v2 }, do_gen_bool)
+    "!=" ->
+      generate_bool_from_args(state, args, fn(v1, v2) { v1 != v2 }, do_gen_bool)
     _ -> {
       use arg_strings, state <- interpreter.try(get_string_from_args(
         state,
@@ -178,7 +180,9 @@ pub fn apply_func_to_args(
 pub fn generate_bool_from_args(
   state: State,
   args: List(parser.Ast),
-  func,
+  condition: fn(a, a) -> Bool,
+  handle_windows: fn(List(List(Value)), fn(a, a) -> Bool) ->
+    Result(Bool, RuntimeError),
 ) -> RanExpression(Value) {
   use arg_values, state <- interpreter.try(
     args
@@ -189,20 +193,23 @@ pub fn generate_bool_from_args(
     [] -> RanExpression(returned: Error(interpreter.IncorrectType), with: state)
     v ->
       RanExpression(
-        returned: result.map(do_gen_bool(v, func), RadishBool),
+        returned: result.map(handle_windows(v, condition), RadishBool),
         with: state,
       )
   }
 }
 
-fn do_gen_bool(windows: List(List(Value)), func) -> Result(Bool, RuntimeError) {
+fn do_gen_bool(
+  windows: List(List(Value)),
+  predicate,
+) -> Result(Bool, RuntimeError) {
   case windows {
     [[value1, value2], ..rest] -> {
       let confirm = fn(v1: a, v2: a) {
-        case func(v1, v2) {
+        case predicate(v1, v2) {
           False -> Ok(False)
           True -> {
-            use next <- result.try(do_gen_bool(rest, func))
+            use next <- result.try(do_gen_bool(rest, predicate))
             Ok(next)
           }
         }
@@ -219,6 +226,33 @@ fn do_gen_bool(windows: List(List(Value)), func) -> Result(Bool, RuntimeError) {
         RadishBool(_), _ -> Error(interpreter.IncorrectType)
         RadishInt(_), _ -> Error(interpreter.IncorrectType)
         RadishList(_), _ -> Error(interpreter.IncorrectType)
+      }
+    }
+    _ -> {
+      Ok(True)
+    }
+  }
+}
+
+fn do_gen_bool_int(
+  windows: List(List(Value)),
+  predicate: fn(Int, Int) -> Bool,
+) -> Result(Bool, RuntimeError) {
+  case windows {
+    [[value1, value2], ..rest] -> {
+      let confirm = fn(v1, v2) {
+        case predicate(v1, v2) {
+          False -> Ok(False)
+          True -> {
+            use next <- result.try(do_gen_bool_int(rest, predicate))
+            Ok(next)
+          }
+        }
+      }
+
+      case value1, value2 {
+        RadishInt(v1), RadishInt(v2) -> confirm(v1, v2)
+        _, _ -> Error(interpreter.IncorrectType)
       }
     }
     _ -> {
