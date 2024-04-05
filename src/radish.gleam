@@ -4,11 +4,12 @@ import gleam/result
 import gleam/erlang
 import gleam/list
 import shellout
+import gleam/bool
 
 // TODO: try_map throughout
 
 pub type Ast {
-  Call(List(Ast))
+  Call(contents: List(Ast), piped: Bool)
   StrVal(String)
   BracketList(List(Ast))
   UnquotedStr(String)
@@ -38,7 +39,11 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
     "\"" <> ending -> parse_string(ending)
     "(" <> call -> {
       use list <- result.try(parse_list(call, ")"))
-      Ok(Parsing(list.remaining, Call(list.value)))
+      Ok(Parsing(list.remaining, Call(list.value, piped: False)))
+    }
+    "|(" <> call -> {
+      use list <- result.try(parse_list(call, ")"))
+      Ok(Parsing(list.remaining, Call(list.value, piped: True)))
     }
     "[" <> call -> {
       use list <- result.try(parse_list(call, "]"))
@@ -121,6 +126,7 @@ fn do_parse_string(input: List(String)) -> Result(Parsing(String), ParseError) {
 pub type RuntimeError {
   InvalidSyntax(SyntaxError)
   ExpectedValue
+  CommandError
 }
 
 pub type SyntaxError {
@@ -136,16 +142,15 @@ pub type Value {
 
 fn run_expression(expression: Ast) -> Result(Value, RuntimeError) {
   case expression {
-    Call([UnquotedStr(func), ..args]) -> call_func(func, args)
-    Call([_, ..]) -> Error(InvalidSyntax(InvalidFuncToCall))
-    Call([]) -> Error(InvalidSyntax(NoFuncToCall))
+    Call([UnquotedStr(func), ..args], piped) -> call_func(func, args, piped)
+    Call([_, ..], _) -> Error(InvalidSyntax(InvalidFuncToCall))
+    Call([], _) -> Error(InvalidSyntax(NoFuncToCall))
     StrVal(s) | UnquotedStr(s) -> Ok(RadishStr(s))
     BracketList(l) ->
       l
       |> list.map(run_expression)
       |> result.all()
       |> result.map(RadishList)
-    _ -> todo
   }
 }
 
@@ -162,31 +167,34 @@ fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
   }
 }
 
-fn call_func(func: String, args: List(Ast)) -> Result(Value, RuntimeError) {
+fn get_string_from_args(args: List(Ast)) -> Result(List(String), RuntimeError) {
+  use arg_values <- result.try(
+    args
+    |> list.map(run_expression)
+    |> result.all(),
+  )
+
+  arg_values
+  |> list.map(get_string_from_value)
+  |> result.all()
+  |> result.map(list.concat)
+}
+
+fn call_func(
+  func: String,
+  args: List(Ast),
+  piped: Bool,
+) -> Result(Value, RuntimeError) {
   case func {
     custom -> {
-      // use arg_values <-  result.try(result.all(list.map(args, run_expression)))
-      use arg_values <- result.try(
-        args
-        |> list.map(run_expression)
-        |> result.all(),
-      )
+      use arg_strings <- result.try(get_string_from_args(args))
 
-      use arg_strings <- result.try(
-        arg_values
-        |> list.map(get_string_from_value)
-        |> result.all(),
-      )
-
-      case
-        shellout.command(
-          run: func,
-          with: list.concat(arg_strings),
-          in: ".",
-          opt: [],
-        )
-      {
-        Ok(s) -> io.println(s)
+      let output =
+        shellout.command(run: func, with: arg_strings, in: ".", opt: [])
+        |> result.replace_error(CommandError)
+      use <- bool.guard(when: piped, return: result.map(output, RadishStr))
+      case output {
+        Ok(str) -> io.println(str)
         Error(e) -> {
           io.debug(e)
           Nil

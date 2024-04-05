@@ -13,7 +13,10 @@ pub fn parse_expr1_test() {
   |> should.be_ok()
   |> should.equal(radish.Parsing(
     "",
-    radish.Call([radish.UnquotedStr("echo"), radish.StrVal("hello there!")]),
+    radish.Call(
+      [radish.UnquotedStr("echo"), radish.StrVal("hello there!")],
+      piped: False,
+    ),
   ))
 }
 
@@ -23,14 +26,17 @@ pub fn parse_expr2_test() {
   |> should.be_ok()
   |> should.equal(radish.Parsing(
     "",
-    radish.Call([
-      radish.UnquotedStr("echo"),
-      radish.BracketList([
-        radish.UnquotedStr("thing1"),
-        radish.UnquotedStr("thing2"),
-        radish.UnquotedStr("thing3"),
-      ]),
-    ]),
+    radish.Call(
+      [
+        radish.UnquotedStr("echo"),
+        radish.BracketList([
+          radish.UnquotedStr("thing1"),
+          radish.UnquotedStr("thing2"),
+          radish.UnquotedStr("thing3"),
+        ]),
+      ],
+      piped: False,
+    ),
   ))
 }
 
@@ -40,7 +46,10 @@ pub fn parse_call_from_expression_test() {
   |> should.be_ok()
   |> should.equal(radish.Parsing(
     "",
-    radish.Call([radish.UnquotedStr("echo"), radish.UnquotedStr("hi")]),
+    radish.Call(
+      [radish.UnquotedStr("echo"), radish.UnquotedStr("hi")],
+      piped: False,
+    ),
   ))
 }
 
@@ -48,7 +57,10 @@ pub fn parse_call_from_expression_2_test() {
   "    (echo)"
   |> radish.parse_expression()
   |> should.be_ok()
-  |> should.equal(radish.Parsing("", radish.Call([radish.UnquotedStr("echo")])))
+  |> should.equal(radish.Parsing(
+    "",
+    radish.Call([radish.UnquotedStr("echo")], piped: False),
+  ))
 }
 
 pub fn parse_list_test() {
@@ -119,15 +131,18 @@ pub fn parse_list_formatted_2_test() {
     "",
     radish.BracketList([
       radish.StrVal("hi"),
-      radish.Call([
-        radish.UnquotedStr("get_name_from_list"),
-        radish.BracketList([
-          radish.UnquotedStr("John"),
-          radish.UnquotedStr("Josie"),
-          radish.UnquotedStr("Joe"),
-          radish.UnquotedStr("Jane"),
-        ]),
-      ]),
+      radish.Call(
+        [
+          radish.UnquotedStr("get_name_from_list"),
+          radish.BracketList([
+            radish.UnquotedStr("John"),
+            radish.UnquotedStr("Josie"),
+            radish.UnquotedStr("Joe"),
+            radish.UnquotedStr("Jane"),
+          ]),
+        ],
+        piped: False,
+      ),
       radish.StrVal("!!"),
     ]),
   ))
@@ -153,15 +168,18 @@ pub fn parse_list_formatted_3_test() {
     "",
     radish.BracketList([
       radish.StrVal("hi"),
-      radish.Call([
-        radish.UnquotedStr("get_name_from_list"),
-        radish.BracketList([
-          radish.UnquotedStr("John"),
-          radish.UnquotedStr("Josie"),
-          radish.UnquotedStr("Joe"),
-          radish.UnquotedStr("Jane"),
-        ]),
-      ]),
+      radish.Call(
+        [
+          radish.UnquotedStr("get_name_from_list"),
+          radish.BracketList([
+            radish.UnquotedStr("John"),
+            radish.UnquotedStr("Josie"),
+            radish.UnquotedStr("Joe"),
+            radish.UnquotedStr("Jane"),
+          ]),
+        ],
+        piped: False,
+      ),
       radish.StrVal("!!"),
     ]),
   ))
