@@ -48,7 +48,8 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
 
 fn parse_atom(input: String) -> Result(Parsing(String), ParseError) {
   case string.pop_grapheme(input) {
-    Ok(#(" ", rest)) -> Ok(Parsing(rest, ""))
+    Ok(#(c, rest)) if c == " " || c == "\n" || c == "\t" ->
+      Ok(Parsing(rest, ""))
     Ok(#(c, _)) if c == ")" || c == "]" -> Ok(Parsing(input, ""))
     Ok(#(c, rest)) -> {
       use parsed_atom <- result.try(parse_atom(rest))
