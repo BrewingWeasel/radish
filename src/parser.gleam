@@ -44,7 +44,7 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
           |> result.map(Number)
           |> result.try_recover(fn(_) {
             case string.pop_grapheme(atom.value) {
-              Ok(#("$", var_name)) -> Ok(Variable(var_name))
+              Ok(#("$", var_name)) if var_name != "" -> Ok(Variable(var_name))
               _ -> Error(Nil)
             }
           })
