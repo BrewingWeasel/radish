@@ -8,6 +8,13 @@ pub fn parse_list_test() {
   |> should.equal(parser.Parsing("", [parser.UnquotedStr("echo")]))
 }
 
+pub fn parse_empty_list_expression_test() {
+  "[]"
+  |> parser.parse_expression()
+  |> should.be_ok()
+  |> should.equal(parser.Parsing("", parser.BracketList([])))
+}
+
 pub fn parse_list_spacing_1_test() {
   "      echo)"
   |> parser.parse_list(")")
