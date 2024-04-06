@@ -8,6 +8,7 @@ import interpreter.{
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/option.{type Option, None, Some}
 import shellout
 import gleam/dict
 
@@ -82,6 +83,23 @@ pub fn call_func(
       generate_bool_from_args(state, args, fn(v1, v2) { v1 >= v2 }, do_gen_bool)
     "<=" ->
       generate_bool_from_args(state, args, fn(v1, v2) { v1 <= v2 }, do_gen_bool)
+    "if" -> {
+      case args {
+        [condition, parser.BracketList(to_run)] ->
+          if_expression(state, condition, to_run, None)
+        _ -> RanExpression(Error(interpreter.ExpectedValue), state)
+      }
+    }
+    "if-else" -> {
+      case args {
+        [
+          condition,
+          parser.BracketList(when_true),
+          parser.BracketList(when_false),
+        ] -> if_expression(state, condition, when_true, Some(when_false))
+        _ -> RanExpression(Error(interpreter.ExpectedValue), state)
+      }
+    }
     _ -> {
       use arg_strings, state <- interpreter.try(get_string_from_args(
         state,
@@ -267,5 +285,55 @@ fn do_gen_bool_int(
     _ -> {
       Ok(True)
     }
+  }
+}
+
+fn if_expression(
+  state: State,
+  condition: parser.Ast,
+  when_true: List(parser.Ast),
+  when_false: Option(List(parser.Ast)),
+) -> RanExpression(Value) {
+  use condition_result, state <- interpreter.try(run_expression(
+    state,
+    condition,
+  ))
+  case condition_result {
+    RadishBool(True) -> {
+      use responses, state <- interpreter.try(interpreter.map(
+        when_true,
+        state,
+        run_expression,
+      ))
+      case option.is_some(when_false) {
+        True ->
+          RanExpression(
+            responses
+              |> list.last()
+              |> result.replace_error(interpreter.IncorrectType),
+            state,
+          )
+        False -> RanExpression(Ok(Void), state)
+      }
+    }
+    RadishBool(False) -> {
+      case when_false {
+        Some(to_run) -> {
+          use responses, state <- interpreter.try(interpreter.map(
+            to_run,
+            state,
+            run_expression,
+          ))
+          RanExpression(
+            responses
+              |> list.last()
+              |> result.replace_error(interpreter.IncorrectType),
+            state,
+          )
+        }
+        None -> RanExpression(Ok(Void), state)
+      }
+    }
+    _ -> RanExpression(Error(interpreter.IncorrectType), state)
   }
 }
