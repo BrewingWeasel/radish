@@ -38,9 +38,9 @@ pub type RanExpression(t) {
 }
 
 pub fn map(
-  args: List(parser.Ast),
+  args: List(a),
   state: State,
-  func: fn(State, parser.Ast) -> RanExpression(t),
+  func: fn(State, a) -> RanExpression(t),
 ) -> RanExpression(List(t)) {
   let #(value, state) =
     list.fold(over: args, from: #(Ok([]), state), with: fn(acc, elem) {

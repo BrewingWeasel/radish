@@ -18,7 +18,7 @@ pub fn run_expression(
 ) -> RanExpression(Value) {
   case expression {
     Call([UnquotedStr(func), ..args], piped) ->
-      call_func(state, func, args, piped)
+      call_func(state, func, Parsed(args), piped)
     Call([_, ..], _) ->
       RanExpression(
         Error(interpreter.InvalidSyntax(interpreter.InvalidFuncToCall)),
@@ -45,19 +45,37 @@ pub fn run_expression(
   }
 }
 
+fn run_expression_from_val(
+  state: State,
+  expression: Value,
+) -> RanExpression(Value) {
+  case expression {
+    RadishList([RadishStr(command), ..rest]) ->
+      call_func(state, command, Value(rest), False)
+    _ -> RanExpression(Ok(expression), state)
+  }
+}
+
+pub type FunctionArguments {
+  Parsed(List(parser.Ast))
+  Value(List(Value))
+}
+
 pub fn call_func(
   state: State,
   func: String,
-  args: List(parser.Ast),
+  args: FunctionArguments,
   piped: Bool,
 ) -> RanExpression(Value) {
   case func {
     "set" -> {
       use #(var_name, value), state <- interpreter.try(case args {
-        [UnquotedStr(variable_name), ast] -> {
+        Parsed([UnquotedStr(variable_name), ast]) -> {
           use val, state <- interpreter.try(run_expression(state, ast))
           RanExpression(Ok(#(variable_name, val)), state)
         }
+        Value([RadishStr(variable_name), value]) ->
+          RanExpression(Ok(#(variable_name, value)), state)
         _ -> RanExpression(Error(interpreter.IncorrectType), state)
       })
       RanExpression(
@@ -83,20 +101,46 @@ pub fn call_func(
       generate_bool_from_args(state, args, fn(v1, v2) { v1 >= v2 }, do_gen_bool)
     "<=" ->
       generate_bool_from_args(state, args, fn(v1, v2) { v1 <= v2 }, do_gen_bool)
+    "run" -> {
+      use args, state <- interpreter.try(get_values_from_args(state, args))
+      case args {
+        [RadishList([RadishStr(f), ..rest])] ->
+          call_func(state, f, Value(rest), False)
+        _ -> RanExpression(Error(interpreter.IncorrectType), state)
+      }
+    }
     "if" -> {
       case args {
-        [condition, parser.BracketList(to_run)] ->
-          if_expression(state, condition, to_run, None)
+        Parsed([condition, parser.BracketList(to_run)]) -> {
+          use condition_result, state <- interpreter.try(run_expression(
+            state,
+            condition,
+          ))
+          if_expression(state, condition_result, Parsed(to_run), None)
+        }
+        Value([condition, RadishList(to_run)]) ->
+          if_expression(state, condition, Value(to_run), None)
         _ -> RanExpression(Error(interpreter.ExpectedValue), state)
       }
     }
     "if-else" -> {
       case args {
-        [
+        Parsed([
           condition,
           parser.BracketList(when_true),
           parser.BracketList(when_false),
-        ] -> if_expression(state, condition, when_true, Some(when_false))
+        ]) -> {
+          use condition_result, state <- interpreter.try(run_expression(
+            state,
+            condition,
+          ))
+          if_expression(
+            state,
+            condition_result,
+            Parsed(when_true),
+            Some(Parsed(when_false)),
+          )
+        }
         _ -> RanExpression(Error(interpreter.ExpectedValue), state)
       }
     }
@@ -143,13 +187,9 @@ pub fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError)
 
 pub fn get_string_from_args(
   state: State,
-  args: List(parser.Ast),
+  args: FunctionArguments,
 ) -> RanExpression(List(String)) {
-  use arg_values, state <- interpreter.try(
-    args
-    |> interpreter.map(state, run_expression),
-  )
-
+  use arg_values, state <- interpreter.try(get_values_from_args(state, args))
   RanExpression(
     returned: arg_values
       |> list.map(get_string_from_value)
@@ -159,9 +199,9 @@ pub fn get_string_from_args(
   )
 }
 
-pub fn apply_int_func_to_args(
+fn apply_int_func_to_args(
   state: State,
-  args: List(parser.Ast),
+  args: FunctionArguments,
   func: fn(Int, Int) -> Int,
 ) -> RanExpression(Value) {
   apply_func_to_args(
@@ -178,18 +218,26 @@ pub fn apply_int_func_to_args(
   )
 }
 
+fn get_values_from_args(
+  state: State,
+  args: FunctionArguments,
+) -> RanExpression(List(Value)) {
+  case args {
+    Parsed(vals) ->
+      vals
+      |> interpreter.map(state, run_expression)
+    Value(vals) -> RanExpression(Ok(vals), state)
+  }
+}
+
 pub fn apply_func_to_args(
   state: State,
-  args: List(parser.Ast),
+  args: FunctionArguments,
   handle_type: fn(Value) -> Result(a, RuntimeError),
   func: fn(a, a) -> a,
   final_type: fn(a) -> Value,
 ) -> RanExpression(Value) {
-  use arg_values, state <- interpreter.try(
-    args
-    |> interpreter.map(state, run_expression),
-  )
-
+  use arg_values, state <- interpreter.try(get_values_from_args(state, args))
   case list.try_map(arg_values, handle_type) {
     Error(e) -> RanExpression(returned: Error(e), with: state)
     Ok(v) ->
@@ -205,15 +253,12 @@ pub fn apply_func_to_args(
 
 pub fn generate_bool_from_args(
   state: State,
-  args: List(parser.Ast),
+  args: FunctionArguments,
   condition: fn(a, a) -> Bool,
   handle_windows: fn(List(List(Value)), fn(a, a) -> Bool) ->
     Result(Bool, RuntimeError),
 ) -> RanExpression(Value) {
-  use arg_values, state <- interpreter.try(
-    args
-    |> interpreter.map(state, run_expression),
-  )
+  use arg_values, state <- interpreter.try(get_values_from_args(state, args))
 
   case list.window(arg_values, 2) {
     [] -> RanExpression(returned: Error(interpreter.IncorrectType), with: state)
@@ -290,21 +335,17 @@ fn do_gen_bool_int(
 
 fn if_expression(
   state: State,
-  condition: parser.Ast,
-  when_true: List(parser.Ast),
-  when_false: Option(List(parser.Ast)),
+  condition: Value,
+  when_true: FunctionArguments,
+  when_false: Option(FunctionArguments),
 ) -> RanExpression(Value) {
-  use condition_result, state <- interpreter.try(run_expression(
-    state,
-    condition,
-  ))
-  case condition_result {
+  case condition {
     RadishBool(True) -> {
-      use responses, state <- interpreter.try(interpreter.map(
-        when_true,
-        state,
-        run_expression,
-      ))
+      use responses, state <- interpreter.try(case when_true {
+        Parsed(to_run) -> interpreter.map(to_run, state, run_expression)
+        Value(to_run) -> interpreter.map(to_run, state, run_expression_from_val)
+      })
+
       case option.is_some(when_false) {
         True ->
           RanExpression(
@@ -319,11 +360,11 @@ fn if_expression(
     RadishBool(False) -> {
       case when_false {
         Some(to_run) -> {
-          use responses, state <- interpreter.try(interpreter.map(
-            to_run,
-            state,
-            run_expression,
-          ))
+          use responses, state <- interpreter.try(case to_run {
+            Parsed(to_run) -> interpreter.map(to_run, state, run_expression)
+            Value(to_run) ->
+              interpreter.map(to_run, state, run_expression_from_val)
+          })
           RanExpression(
             responses
               |> list.last()
