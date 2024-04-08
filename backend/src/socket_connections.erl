@@ -18,6 +18,6 @@ run_shell(Uuid) ->
 
 handle_port_for_shell(RequestPort, Uuid, Socket, Shell) ->
    {ok, {_, _, Data}} = gen_udp:recv(RequestPort, 0),
-   Response = radish_shell:run_command(Shell, Data),
+   Response = radish_shell:run_command(Shell, erlang:iolist_to_binary(Data)),
    gen_udp:send(Socket, {local,"/tmp/radish" ++ Uuid ++ "_response"}, 0, Response),
    handle_port_for_shell(RequestPort, Uuid, Socket, Shell).

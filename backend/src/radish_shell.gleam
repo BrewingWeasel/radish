@@ -2,7 +2,6 @@ import gleam/otp/actor
 import gleam/otp/port.{type Port}
 import gleam/erlang/process.{type Subject}
 import gleam/string
-import gleam/io
 import parser
 import interpreter.{type RuntimeError, type State, type Value}
 import interpreter/expression
@@ -41,10 +40,8 @@ fn handle_message(
 }
 
 fn handle_run_command(contents, client, port, state) {
-  io.print(contents)
   case parser.parse_expression(contents) {
     Ok(ast) -> {
-      io.debug(ast)
       let response = expression.run_expression(state, ast.value)
       actor.send(client, response.returned)
       actor.continue(#(port, response.with))
