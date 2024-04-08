@@ -15,6 +15,7 @@ pub type RuntimeError {
 pub type SyntaxError {
   InvalidFuncToCall
   NoFuncToCall
+  Parsing(parser.ParseError)
 }
 
 pub type Value {
