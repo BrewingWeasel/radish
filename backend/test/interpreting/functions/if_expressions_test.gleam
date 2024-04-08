@@ -1,22 +1,20 @@
 import parser
 import interpreter
+import interpreter/expression
 import gleeunit/should
-import interpreter/shell
 
 pub fn single_if_expression_from_string_1_test() {
-  let assert Ok(test_shell) = shell.new()
   let parsed =
     "(if (== 2 2) [(echo hi)])"
     |> parser.parse_expression()
     |> should.be_ok()
 
-  shell.run_command(test_shell, parsed.value)
+  expression.run_expression(interpreter.new_state(), parsed.value).returned
   |> should.be_ok()
   |> should.equal(interpreter.Void)
 }
 
 pub fn ifelse_expression_from_string_1_test() {
-  let assert Ok(test_shell) = shell.new()
   let parsed =
     "
 (if-else (== 2 2) [
@@ -29,13 +27,12 @@ pub fn ifelse_expression_from_string_1_test() {
     |> parser.parse_expression()
     |> should.be_ok()
 
-  shell.run_command(test_shell, parsed.value)
+  expression.run_expression(interpreter.new_state(), parsed.value).returned
   |> should.be_ok()
   |> should.equal(interpreter.RadishInt(1))
 }
 
 pub fn ifelse_expression_from_string_2_test() {
-  let assert Ok(test_shell) = shell.new()
   let parsed =
     "
 (if-else (== 1 2) [
@@ -46,7 +43,7 @@ pub fn ifelse_expression_from_string_2_test() {
     |> parser.parse_expression()
     |> should.be_ok()
 
-  shell.run_command(test_shell, parsed.value)
+  expression.run_expression(interpreter.new_state(), parsed.value).returned
   |> should.be_ok()
   |> should.equal(interpreter.RadishInt(2))
 }
