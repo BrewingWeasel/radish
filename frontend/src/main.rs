@@ -24,15 +24,15 @@ fn main() {
     let uuid = &Uuid::new_v4().to_string();
     {
         let radish_main = UnixDatagram::unbound().unwrap();
-        radish_main.connect("/tmp/radish_main").unwrap();
+        radish_main.connect("/tmp/radish/main").unwrap();
         radish_main.send(uuid.as_bytes()).unwrap();
     }
 
-    let response_sock = UnixDatagram::bind(format!("/tmp/radish{uuid}_response")).unwrap();
-    sleep(Duration::from_millis(50));
+    let response_sock = UnixDatagram::bind(format!("/tmp/radish/{uuid}_response")).unwrap();
+    sleep(Duration::from_millis(10)); // literally 1 millisecond delay on my computer; sleep a bit longer to be safe
     let request_sock = UnixDatagram::unbound().unwrap();
     request_sock
-        .connect(format!("/tmp/radish{uuid}_request"))
+        .connect(format!("/tmp/radish/{uuid}_request"))
         .unwrap();
 
     loop {
