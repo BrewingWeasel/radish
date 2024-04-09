@@ -1,9 +1,24 @@
-use reedline::{DefaultPrompt, Reedline, Signal};
+use nu_ansi_term::{Color, Style};
+use reedline::{DefaultHinter, DefaultPrompt, FileBackedHistory, Reedline, Signal};
 use std::{os::unix::net::UnixDatagram, thread::sleep, time::Duration};
 use uuid::Uuid;
 
+const HISTORY_FILE_LIMIT: usize = 5000;
+
 fn main() {
-    let mut line_editor = Reedline::create();
+    let mut line_editor = Reedline::create().with_hinter(Box::new(
+        DefaultHinter::default().with_style(Style::new().italic().fg(Color::Magenta)),
+    ));
+
+    if let Some(data_dir) = dirs::data_dir() {
+        let history_manager = Box::new(FileBackedHistory::with_file(
+            HISTORY_FILE_LIMIT,
+            data_dir.join("radish_history"),
+        ))
+        .expect("to be able to open history");
+        line_editor = line_editor.with_history(Box::new(history_manager));
+    }
+
     let prompt = DefaultPrompt::default();
 
     let uuid = &Uuid::new_v4().to_string();
