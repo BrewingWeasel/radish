@@ -2,6 +2,7 @@ import parser
 import gleam/list
 import gleam/result
 import gleam/dict.{type Dict}
+import gleam/otp/port.{type Port}
 
 pub type RuntimeError {
   InvalidSyntax(SyntaxError)
@@ -27,11 +28,15 @@ pub type Value {
 }
 
 pub type State {
-  State(variables: Dict(String, Value))
+  State(
+    variables: Dict(String, Value),
+    request_port: Port,
+    response_port: String,
+  )
 }
 
-pub fn new_state() -> State {
-  State(variables: dict.new())
+pub fn new_state(request_port: Port, response_port: String) -> State {
+  State(dict.new(), request_port, response_port)
 }
 
 pub type RanExpression(t) {

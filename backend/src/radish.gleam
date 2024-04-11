@@ -9,6 +9,6 @@ pub fn main() {
 @external(erlang, "socket_connections", "generate_server")
 fn generate_server() -> Nil
 
-pub fn start_shell(port) {
-  radish_shell.new(port)
+pub fn start_shell(port, response_port) {
+  radish_shell.new(port, response_port)
 }

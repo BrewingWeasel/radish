@@ -38,12 +38,7 @@ fn main() {
     loop {
         let sig = line_editor.read_line(&prompt);
         match sig {
-            Ok(Signal::Success(buffer)) => {
-                request_sock.send(buffer.as_bytes()).unwrap();
-                let mut buf = [0; 128];
-                response_sock.recv(&mut buf).unwrap();
-                println!("{}", std::str::from_utf8(&buf).unwrap());
-            }
+            Ok(Signal::Success(buffer)) => run_command(buffer, &request_sock, &response_sock),
             Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
                 println!("Closing shell");
                 break;
@@ -51,6 +46,27 @@ fn main() {
             x => {
                 println!("Event: {:?}", x);
             }
+        }
+    }
+}
+
+fn run_command(command: String, request_sock: &UnixDatagram, response_sock: &UnixDatagram) {
+    request_sock.send(command.as_bytes()).unwrap();
+    // let mut buffer = String::new();
+    // io::stdin().read_line(&mut buffer)?;
+    loop {
+        let mut buf = [0; 128];
+        response_sock.recv(&mut buf).unwrap();
+        let response = std::str::from_utf8(&buf).unwrap();
+        match response.split_at(1) {
+            ("o", stdout) => {
+                print!("{}", stdout);
+            }
+            ("r", return_value) => {
+                println!("returned {}", return_value);
+                break;
+            }
+            _ => unreachable!(),
         }
     }
 }

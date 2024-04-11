@@ -1,5 +1,8 @@
-import gleam/io
 import gleam/bool
+import gleam/io
+import gleam/string
+import gleam/otp/port.{type Port}
+import gleam/otp/task
 import parser.{BracketList, Call, Number, StrVal, UnquotedStr, Variable}
 import interpreter.{
   type RanExpression, type RuntimeError, type State, type Value, RadishBool,
@@ -9,8 +12,8 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/option.{type Option, None, Some}
-import shellout
 import gleam/dict
+import glexec
 
 pub fn run_expression(
   state: State,
@@ -150,25 +153,83 @@ pub fn call_func(
         args,
       ))
 
-      let output =
-        shellout.command(run: func, with: arg_strings, in: ".", opt: [])
-        |> result.replace_error(interpreter.CommandError)
+      use command, state <- interpreter.try(RanExpression(
+        func
+          |> glexec.find_executable()
+          |> result.replace_error(interpreter.CommandError),
+        state,
+      ))
 
-      use <- bool.guard(
-        when: piped,
-        return: RanExpression(result.map(output, RadishStr), state),
-      )
-      case output {
-        Ok(str) -> io.println(str)
-        Error(e) -> {
-          io.debug(e)
-          Nil
-        }
-      }
+      // TODO: error handling
+      let assert Ok(glexec.Pids(_pid, ospid)) =
+        glexec.new()
+        |> glexec.with_stdin(glexec.StdinPipe)
+        |> glexec.with_stdout(glexec.StdoutCapture)
+        |> glexec.with_stderr(glexec.StderrCapture)
+        |> glexec.with_monitor(True)
+        |> glexec.run_async(glexec.Execve([command, ..arg_strings]))
+
+      // let stdin = task.async(fn() { pipe_stdin(ospid, state) })
+
+      pipe_stdout(ospid, state)
+      // task.await_forever(stdin)
+
       RanExpression(Ok(Void), state)
+      // use <- bool.guard(
+      //   when: piped,
+      //   return: RanExpression(result.map(output, RadishStr), state),
+      // )
+      // case output {
+      //   Ok(str) -> io.println(str)
+      //   Error(e) -> {
+      //     io.debug(e)
+      //     Nil
+      //   }
+      // }
     }
   }
 }
+
+const timeout = 500_000
+
+fn pipe_stdin(running_command, state: State) {
+  let response = read_stdin(state.request_port)
+  case string.pop_grapheme(response) {
+    Ok(#("i", stdin)) -> {
+      let assert Ok(Nil) = glexec.send(running_command, stdin)
+      pipe_stdin(running_command, state)
+    }
+    Ok(#("e", _)) -> {
+      let assert Ok(Nil) = glexec.send_eof(running_command)
+      Nil
+    }
+    Ok(#("x", _)) -> {
+      let assert Ok(Nil) = glexec.kill_ospid(running_command, 1)
+      Nil
+    }
+    _ -> Nil
+  }
+}
+
+@external(erlang, "socket_connections", "read_stdin")
+fn read_stdin(socket: Port) -> String
+
+fn pipe_stdout(running_command, state: State) {
+  case glexec.obtain(timeout) {
+    Ok(glexec.ObtainStdout(_, v)) | Ok(glexec.ObtainStderr(_, v)) -> {
+      send_stdout(state.response_port, v)
+      pipe_stdout(running_command, state)
+    }
+    // Error(glexec.ObtainDownNormal(_, _)) -> {
+    //   Nil
+    // }
+    Error(_) -> Nil
+  }
+  // TODO: error handling
+}
+
+@external(erlang, "socket_connections", "send_stdout")
+fn send_stdout(out_socket: String, contents: String) -> Nil
 
 pub fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
   case value {
