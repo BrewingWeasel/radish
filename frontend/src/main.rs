@@ -1,11 +1,12 @@
 use nu_ansi_term::{Color, Style};
 use reedline::{DefaultHinter, DefaultPrompt, FileBackedHistory, Reedline, Signal};
-use std::{os::unix::net::UnixDatagram, thread::sleep, time::Duration};
+use std::{io::stdin, os::unix::net::UnixDatagram, thread::sleep, time::Duration};
 use uuid::Uuid;
 
 const HISTORY_FILE_LIMIT: usize = 5000;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut line_editor = Reedline::create().with_hinter(Box::new(
         DefaultHinter::default().with_style(Style::new().italic().fg(Color::Magenta)),
     ));
@@ -38,7 +39,7 @@ fn main() {
     loop {
         let sig = line_editor.read_line(&prompt);
         match sig {
-            Ok(Signal::Success(buffer)) => run_command(buffer, &request_sock, &response_sock),
+            Ok(Signal::Success(buffer)) => run_command(buffer, request_sock.try_clone().unwrap(), &response_sock).await,
             Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
                 println!("Closing shell");
                 break;
@@ -50,10 +51,18 @@ fn main() {
     }
 }
 
-fn run_command(command: String, request_sock: &UnixDatagram, response_sock: &UnixDatagram) {
+async fn run_command(command: String, request_sock: UnixDatagram, response_sock: &UnixDatagram) {
     request_sock.send(command.as_bytes()).unwrap();
-    // let mut buffer = String::new();
-    // io::stdin().read_line(&mut buffer)?;
+    tokio::spawn(async move {
+        loop {
+            let mut buffer = String::new();
+            match stdin().read_line(&mut buffer) {
+                Ok(_) => {request_sock.send(format!("i{buffer}").as_bytes()).unwrap();}
+                Err(_) => break
+            }
+            
+        }
+    });
     loop {
         let mut buf = [0; 128];
         response_sock.recv(&mut buf).unwrap();

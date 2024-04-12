@@ -9,6 +9,7 @@ edition = "2021"
 dirs = "5.0.1"
 nu-ansi-term = "0.50.0"
 reedline = "0.31.0"
+tokio = { version = "1.37.0", features = ["tokio-macros", "rt", "full"] }
 
 [dependencies.uuid]
 version = "1.8.0"

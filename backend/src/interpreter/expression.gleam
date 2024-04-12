@@ -167,25 +167,15 @@ pub fn call_func(
         |> glexec.with_stdout(glexec.StdoutCapture)
         |> glexec.with_stderr(glexec.StderrCapture)
         |> glexec.with_monitor(True)
+        |> glexec.with_pty(True)
         |> glexec.run_async(glexec.Execve([command, ..arg_strings]))
 
-      // let stdin = task.async(fn() { pipe_stdin(ospid, state) })
+      let stdin = task.async(fn() { pipe_stdin(ospid, state) })
 
       pipe_stdout(ospid, state)
-      // task.await_forever(stdin)
+      task.await_forever(stdin)
 
       RanExpression(Ok(Void), state)
-      // use <- bool.guard(
-      //   when: piped,
-      //   return: RanExpression(result.map(output, RadishStr), state),
-      // )
-      // case output {
-      //   Ok(str) -> io.println(str)
-      //   Error(e) -> {
-      //     io.debug(e)
-      //     Nil
-      //   }
-      // }
     }
   }
 }
