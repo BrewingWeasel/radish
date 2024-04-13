@@ -1,26 +1,34 @@
-use nu_ansi_term::{Color, Style};
-use reedline::{DefaultHinter, DefaultPrompt, FileBackedHistory, Reedline, Signal};
-use std::{io::stdin, os::unix::net::UnixDatagram, thread::sleep, time::Duration};
+use async_std::task;
+use rustyline::{error::ReadlineError, Cmd, Editor, EventHandler, KeyCode, KeyEvent, Modifiers, Result};
+use rustyline::highlight::MatchingBracketHighlighter;
+use rustyline::validate::MatchingBracketValidator;
+use rustyline::{Completer, Helper, Highlighter, Hinter, Validator};
+use std::sync::Arc;
+use std::{
+    io::stdin,
+    os::unix::net::UnixDatagram,
+    thread::sleep,
+    time::Duration,
+};
 use uuid::Uuid;
 
-const HISTORY_FILE_LIMIT: usize = 5000;
 
-#[tokio::main]
-async fn main() {
-    let mut line_editor = Reedline::create().with_hinter(Box::new(
-        DefaultHinter::default().with_style(Style::new().italic().fg(Color::Magenta)),
-    ));
+#[derive(Completer, Helper, Highlighter, Hinter, Validator)]
+struct InputValidator {
+    #[rustyline(Validator)]
+    brackets: MatchingBracketValidator,
+    #[rustyline(Highlighter)]
+    highlighter: MatchingBracketHighlighter,
+}
 
-    if let Some(data_dir) = dirs::data_dir() {
-        let history_manager = Box::new(FileBackedHistory::with_file(
-            HISTORY_FILE_LIMIT,
-            data_dir.join("radish_history"),
-        ))
-        .expect("to be able to open history");
-        line_editor = line_editor.with_history(Box::new(history_manager));
-    }
+fn main() {
+    let h = InputValidator {
+        brackets: MatchingBracketValidator::new(),
+        highlighter: MatchingBracketHighlighter::new(),
+    };
+    let mut rl = Editor::new().unwrap();
+    rl.set_helper(Some(h));
 
-    let prompt = DefaultPrompt::default();
 
     let uuid = &Uuid::new_v4().to_string();
     {
@@ -31,16 +39,18 @@ async fn main() {
 
     let response_sock = UnixDatagram::bind(format!("/tmp/radish/{uuid}_response")).unwrap();
     sleep(Duration::from_millis(10)); // literally 1 millisecond delay on my computer; sleep a bit longer to be safe
-    let request_sock = UnixDatagram::unbound().unwrap();
+    let request_sock = Arc::new(UnixDatagram::unbound().unwrap());
     request_sock
         .connect(format!("/tmp/radish/{uuid}_request"))
         .unwrap();
 
     loop {
-        let sig = line_editor.read_line(&prompt);
-        match sig {
-            Ok(Signal::Success(buffer)) => run_command(buffer, request_sock.try_clone().unwrap(), &response_sock).await,
-            Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
+        match rl.readline(">> ") {
+            Ok(buffer) => {
+                task::block_on(async { run_command(buffer, Arc::clone(&request_sock), &response_sock).await });
+                println!("done!");
+            }
+            Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("Closing shell");
                 break;
             }
@@ -51,16 +61,30 @@ async fn main() {
     }
 }
 
-async fn run_command(command: String, request_sock: UnixDatagram, response_sock: &UnixDatagram) {
+async fn run_command(command: String, request_sock: Arc<UnixDatagram>, response_sock: &UnixDatagram) {
     request_sock.send(command.as_bytes()).unwrap();
-    tokio::spawn(async move {
+    let other_request_sock = Arc::clone(&request_sock);
+    let task = task::spawn(async move {
+        let mut buffer = String::new();
         loop {
-            let mut buffer = String::new();
-            match stdin().read_line(&mut buffer) {
-                Ok(_) => {request_sock.send(format!("i{buffer}").as_bytes()).unwrap();}
-                Err(_) => break
+            match async_std::io::stdin().read_line(&mut buffer).await {
+                Ok(0) => {
+                    other_request_sock
+                        .send(String::from("e").as_bytes())
+                        .unwrap();
+                    break;
+                }
+                Ok(_) => {
+                    other_request_sock
+                        .send(format!("i{buffer}").as_bytes())
+                        .unwrap();
+                }
+                Err(e) => {
+                    println!("{:?}", e);
+                    break;
+                }
             }
-            
+            buffer.clear();
         }
     });
     loop {
@@ -73,6 +97,7 @@ async fn run_command(command: String, request_sock: UnixDatagram, response_sock:
             }
             ("r", return_value) => {
                 println!("returned {}", return_value);
+                task.cancel().await;
                 break;
             }
             _ => unreachable!(),
