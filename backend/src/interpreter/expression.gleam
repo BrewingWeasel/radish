@@ -1,19 +1,19 @@
 import gleam/bool
+import gleam/dict
+import gleam/erlang/process
+import gleam/int
 import gleam/io
-import gleam/string
+import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/otp/port.{type Port}
-import gleam/otp/task
-import parser.{BracketList, Call, Number, StrVal, UnquotedStr, Variable}
+import gleam/result
+import gleam/string
+import glexec
 import interpreter.{
   type RanExpression, type RuntimeError, type State, type Value, RadishBool,
   RadishInt, RadishList, RadishStr, RanExpression, Void,
 }
-import gleam/int
-import gleam/list
-import gleam/result
-import gleam/option.{type Option, None, Some}
-import gleam/dict
-import glexec
+import parser.{BracketList, Call, Number, StrVal, UnquotedStr, Variable}
 
 pub fn run_expression(
   state: State,
@@ -21,7 +21,7 @@ pub fn run_expression(
 ) -> RanExpression(Value) {
   case expression {
     Call([UnquotedStr(func), ..args], piped) ->
-      call_func(state, func, Parsed(args), piped)
+      io.debug(call_func(state, func, Parsed(args), piped))
     Call([_, ..], _) ->
       RanExpression(
         Error(interpreter.InvalidSyntax(interpreter.InvalidFuncToCall)),
@@ -129,10 +129,10 @@ pub fn call_func(
     "if-else" -> {
       case args {
         Parsed([
-          condition,
-          parser.BracketList(when_true),
-          parser.BracketList(when_false),
-        ]) -> {
+            condition,
+            parser.BracketList(when_true),
+            parser.BracketList(when_false),
+          ]) -> {
           use condition_result, state <- interpreter.try(run_expression(
             state,
             condition,
@@ -170,11 +170,10 @@ pub fn call_func(
         |> glexec.with_pty(True)
         |> glexec.run_async(glexec.Execve([command, ..arg_strings]))
 
-      let stdin = task.async(fn() { pipe_stdin(ospid, state) })
+      let stdin = process.start(fn() { pipe_stdin(ospid, state) }, False)
 
-      pipe_stdout(ospid, state)
-      task.await_forever(stdin)
-
+      pipe_stdout(ospid, state, stdin)
+      io.debug("lol!")
       RanExpression(Ok(Void), state)
     }
   }
@@ -184,36 +183,50 @@ const timeout = 500_000
 
 fn pipe_stdin(running_command, state: State) {
   let response = read_stdin(state.request_port)
-  case string.pop_grapheme(response) {
-    Ok(#("i", stdin)) -> {
-      let assert Ok(Nil) = glexec.send(running_command, stdin)
-      pipe_stdin(running_command, state)
-    }
-    Ok(#("e", _)) -> {
+  case response {
+    <<"end":utf8>> -> {
       let assert Ok(Nil) = glexec.send_eof(running_command)
       Nil
     }
-    Ok(#("x", _)) -> {
-      let assert Ok(Nil) = glexec.kill_ospid(running_command, 1)
-      Nil
+    <<v>> -> {
+      io.println("starting")
+      io.debug(v)
+      // glexec.send(running_command, "hi")
+      let assert Ok(Nil) =
+        glexec.send(
+          running_command,
+          string.from_utf_codepoints([
+            {
+              let assert Ok(s) = string.utf_codepoint(v)
+              s
+            },
+          ]),
+        )
+      pipe_stdin(running_command, state)
     }
     _ -> Nil
   }
 }
 
-@external(erlang, "socket_connections", "read_stdin")
-fn read_stdin(socket: Port) -> String
+@external(erlang, "socket_connections", "identity")
+fn bit_array_to_string(v: BitArray) -> String
 
-fn pipe_stdout(running_command, state: State) {
+@external(erlang, "socket_connections", "read_stdin")
+fn read_stdin(socket: Port) -> BitArray
+
+fn pipe_stdout(running_command, state: State, stdin_task) {
   case glexec.obtain(timeout) {
     Ok(glexec.ObtainStdout(_, v)) | Ok(glexec.ObtainStderr(_, v)) -> {
       send_stdout(state.response_port, v)
-      pipe_stdout(running_command, state)
+      pipe_stdout(running_command, state, stdin_task)
+    }
+    Error(_) -> {
+      process.kill(stdin_task)
+      Nil
     }
     // Error(glexec.ObtainDownNormal(_, _)) -> {
-    //   Nil
-    // }
-    Error(_) -> Nil
+  //   Nil
+  // }
   }
   // TODO: error handling
 }

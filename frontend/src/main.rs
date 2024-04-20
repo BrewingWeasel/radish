@@ -1,3 +1,4 @@
+use async_std::io::ReadExt;
 use async_std::task;
 use rustyline::{error::ReadlineError, Cmd, Editor, EventHandler, KeyCode, KeyEvent, Modifiers, Result};
 use rustyline::highlight::MatchingBracketHighlighter;
@@ -39,16 +40,20 @@ fn main() {
 
     let response_sock = UnixDatagram::bind(format!("/tmp/radish/{uuid}_response")).unwrap();
     sleep(Duration::from_millis(10)); // literally 1 millisecond delay on my computer; sleep a bit longer to be safe
-    let request_sock = Arc::new(UnixDatagram::unbound().unwrap());
+    let request_sock = UnixDatagram::unbound().unwrap();
     request_sock
         .connect(format!("/tmp/radish/{uuid}_request"))
+        .unwrap();
+
+    let stdin_sock = Arc::new(UnixDatagram::unbound().unwrap());
+    stdin_sock
+        .connect(format!("/tmp/radish/{uuid}_stdin"))
         .unwrap();
 
     loop {
         match rl.readline(">> ") {
             Ok(buffer) => {
-                task::block_on(async { run_command(buffer, Arc::clone(&request_sock), &response_sock).await });
-                println!("done!");
+                task::block_on(async { run_command(buffer, &request_sock, Arc::clone(&stdin_sock), &response_sock).await });
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("Closing shell");
@@ -61,26 +66,21 @@ fn main() {
     }
 }
 
-async fn run_command(command: String, request_sock: Arc<UnixDatagram>, response_sock: &UnixDatagram) {
+async fn run_command(command: String, request_sock: &UnixDatagram, stdin_sock: Arc<UnixDatagram>, response_sock: &UnixDatagram) {
     request_sock.send(command.as_bytes()).unwrap();
-    let other_request_sock = Arc::clone(&request_sock);
     let task = task::spawn(async move {
-        let mut buffer = String::new();
+        let mut buffer = Vec::from([0; 1]);
         loop {
-            match async_std::io::stdin().read_line(&mut buffer).await {
-                Ok(0) => {
-                    other_request_sock
-                        .send(String::from("e").as_bytes())
-                        .unwrap();
-                    break;
-                }
-                Ok(_) => {
-                    other_request_sock
-                        .send(format!("i{buffer}").as_bytes())
+            match async_std::io::stdin().read_exact(&mut buffer).await {
+                Ok(()) => {
+                    stdin_sock
+                        .send(&buffer)
                         .unwrap();
                 }
-                Err(e) => {
-                    println!("{:?}", e);
+                Err(_) => {
+                    stdin_sock
+                        .send("end".as_bytes())
+                        .unwrap();
                     break;
                 }
             }
