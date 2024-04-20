@@ -1,18 +1,14 @@
 use async_std::io::ReadExt;
 use async_std::task;
-use rustyline::{error::ReadlineError, Cmd, Editor, EventHandler, KeyCode, KeyEvent, Modifiers, Result};
 use rustyline::highlight::MatchingBracketHighlighter;
 use rustyline::validate::MatchingBracketValidator;
+use rustyline::{
+    error::ReadlineError, Cmd, Editor, EventHandler, KeyCode, KeyEvent, Modifiers, Result,
+};
 use rustyline::{Completer, Helper, Highlighter, Hinter, Validator};
 use std::sync::Arc;
-use std::{
-    io::stdin,
-    os::unix::net::UnixDatagram,
-    thread::sleep,
-    time::Duration,
-};
+use std::{io::stdin, os::unix::net::UnixDatagram, thread::sleep, time::Duration};
 use uuid::Uuid;
-
 
 #[derive(Completer, Helper, Highlighter, Hinter, Validator)]
 struct InputValidator {
@@ -29,7 +25,6 @@ fn main() {
     };
     let mut rl = Editor::new().unwrap();
     rl.set_helper(Some(h));
-
 
     let uuid = &Uuid::new_v4().to_string();
     {
@@ -53,7 +48,15 @@ fn main() {
     loop {
         match rl.readline(">> ") {
             Ok(buffer) => {
-                task::block_on(async { run_command(buffer, &request_sock, Arc::clone(&stdin_sock), &response_sock).await });
+                task::block_on(async {
+                    run_command(
+                        buffer,
+                        &request_sock,
+                        Arc::clone(&stdin_sock),
+                        &response_sock,
+                    )
+                    .await
+                });
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("Closing shell");
@@ -66,25 +69,28 @@ fn main() {
     }
 }
 
-async fn run_command(command: String, request_sock: &UnixDatagram, stdin_sock: Arc<UnixDatagram>, response_sock: &UnixDatagram) {
+async fn run_command(
+    command: String,
+    request_sock: &UnixDatagram,
+    stdin_sock: Arc<UnixDatagram>,
+    response_sock: &UnixDatagram,
+) {
     request_sock.send(command.as_bytes()).unwrap();
     let task = task::spawn(async move {
-        let mut buffer = Vec::from([0; 1]);
+        let mut buffer = vec![0; 1];
+        let mut v = 0;
         loop {
             match async_std::io::stdin().read_exact(&mut buffer).await {
                 Ok(()) => {
-                    stdin_sock
-                        .send(&buffer)
-                        .unwrap();
+                    stdin_sock.send(&buffer).unwrap();
+                    println!("sent {:?}", buffer);
                 }
                 Err(_) => {
-                    stdin_sock
-                        .send("end".as_bytes())
-                        .unwrap();
+                    stdin_sock.send("end".as_bytes()).unwrap();
                     break;
                 }
             }
-            buffer.clear();
+            buffer = vec![0; 1];
         }
     });
     loop {
