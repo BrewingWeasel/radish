@@ -83,7 +83,6 @@ async fn run_command(
             match async_std::io::stdin().read_exact(&mut buffer).await {
                 Ok(()) => {
                     stdin_sock.send(&buffer).unwrap();
-                    println!("sent {:?}", buffer);
                 }
                 Err(_) => {
                     stdin_sock.send("end".as_bytes()).unwrap();

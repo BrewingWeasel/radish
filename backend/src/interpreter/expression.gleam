@@ -1,3 +1,4 @@
+import gleam/bit_array
 import gleam/bool
 import gleam/dict
 import gleam/erlang/process
@@ -21,7 +22,7 @@ pub fn run_expression(
 ) -> RanExpression(Value) {
   case expression {
     Call([UnquotedStr(func), ..args], piped) ->
-      io.debug(call_func(state, func, Parsed(args), piped))
+      call_func(state, func, Parsed(args), piped)
     Call([_, ..], _) ->
       RanExpression(
         Error(interpreter.InvalidSyntax(interpreter.InvalidFuncToCall)),
@@ -129,10 +130,10 @@ pub fn call_func(
     "if-else" -> {
       case args {
         Parsed([
-            condition,
-            parser.BracketList(when_true),
-            parser.BracketList(when_false),
-          ]) -> {
+          condition,
+          parser.BracketList(when_true),
+          parser.BracketList(when_false),
+        ]) -> {
           use condition_result, state <- interpreter.try(run_expression(
             state,
             condition,
@@ -173,7 +174,6 @@ pub fn call_func(
       let stdin = process.start(fn() { pipe_stdin(ospid, state) }, False)
 
       pipe_stdout(ospid, state, stdin)
-      io.debug("lol!")
       RanExpression(Ok(Void), state)
     }
   }
@@ -184,21 +184,18 @@ const timeout = 500_000
 fn pipe_stdin(running_command, state: State) {
   let response = read_stdin(state.request_port)
   case response {
-    <<"end":utf8>> -> {
+    <<_, _, _, _, "end":utf8>> -> {
       let assert Ok(Nil) = glexec.send_eof(running_command)
       Nil
     }
-    <<v>> -> {
-      io.println("starting")
-      io.debug(v)
-      // glexec.send(running_command, "hi")
+    <<_, _, _, _, v>> -> {
       let assert Ok(Nil) =
         glexec.send(
           running_command,
           string.from_utf_codepoints([
             {
-              let assert Ok(s) = string.utf_codepoint(v)
-              s
+              let assert Ok(u) = string.utf_codepoint(v)
+              u
             },
           ]),
         )
@@ -208,18 +205,17 @@ fn pipe_stdin(running_command, state: State) {
   }
 }
 
-@external(erlang, "socket_connections", "identity")
-fn bit_array_to_string(v: BitArray) -> String
-
 @external(erlang, "socket_connections", "read_stdin")
 fn read_stdin(socket: Port) -> BitArray
 
 fn pipe_stdout(running_command, state: State, stdin_task) {
-  case glexec.obtain(timeout) {
+  case glexec.obtain(50) {
     Ok(glexec.ObtainStdout(_, v)) | Ok(glexec.ObtainStderr(_, v)) -> {
       send_stdout(state.response_port, v)
       pipe_stdout(running_command, state, stdin_task)
     }
+    Error(glexec.ObtainTimeout) ->
+      pipe_stdout(running_command, state, stdin_task)
     Error(_) -> {
       process.kill(stdin_task)
       Nil
