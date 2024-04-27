@@ -67,8 +67,11 @@ async fn run_command(command: String, request_sock: &UnixDatagram, response_sock
             let mut args = Vec::new();
             loop {
                 let mut details_buf = vec![0; 100];
-                response_sock.recv(&mut details_buf).unwrap();
-                match std::str::from_utf8(&details_buf).unwrap().split_at(1) {
+                let size = response_sock.recv(&mut details_buf).unwrap();
+                match std::str::from_utf8(&details_buf[..size])
+                    .unwrap()
+                    .split_at(1)
+                {
                     ("a", arg) => {
                         args.push(arg.to_owned());
                     }
@@ -76,7 +79,6 @@ async fn run_command(command: String, request_sock: &UnixDatagram, response_sock
                     _ => todo!(),
                 }
             }
-            println!("{:?} {:?}", args, command);
 
             let mut child = Command::new(command)
                 .args(args)
