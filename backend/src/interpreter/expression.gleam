@@ -1,13 +1,10 @@
 import gleam/bool
 import gleam/dict
-import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/port.{type Port}
 import gleam/result
-import gleam/string
-import glexec
 import interpreter.{
   type RanExpression, type RuntimeError, type State, type Value, RadishBool,
   RadishInt, RadishList, RadishStr, RanExpression, Void,
@@ -67,7 +64,7 @@ pub fn call_func(
   state: State,
   func: String,
   args: FunctionArguments,
-  piped: Bool,
+  _piped: Bool,
 ) -> RanExpression(Value) {
   case func {
     "set" -> {
@@ -146,29 +143,58 @@ pub fn call_func(
         _ -> RanExpression(Error(interpreter.ExpectedValue), state)
       }
     }
+    "|" -> {
+      let assert Parsed(parsed_args) = args
+      let commands =
+        list.try_map(parsed_args, fn(x) {
+          case x {
+            parser.Call([parser.UnquotedStr(cmd), ..args], _) ->
+              Ok(#(cmd, args))
+            _ -> Error(interpreter.ExpectedValue)
+          }
+        })
+
+      case commands {
+        Ok(cmds) -> {
+          let running_commands =
+            interpreter.try_each(cmds, state, fn(state, x) {
+              use arg_strings, state <- interpreter.try(get_string_from_args(
+                state,
+                Parsed(x.1),
+              ))
+              supply_command(x.0, arg_strings, state.response_port)
+              RanExpression(Ok(Nil), state)
+            })
+          finish_command(state.request_port, state.response_port)
+          case running_commands.returned {
+            Ok(Nil) -> RanExpression(Ok(Void), running_commands.with)
+            Error(e) -> RanExpression(Error(e), running_commands.with)
+          }
+        }
+        Error(e) -> RanExpression(Error(e), state)
+      }
+    }
     external_command -> {
       use arg_strings, state <- interpreter.try(get_string_from_args(
         state,
         args,
       ))
-      run_command(
-        external_command,
-        arg_strings,
-        state.request_port,
-        state.response_port,
-      )
+      supply_command(external_command, arg_strings, state.response_port)
+      finish_command(state.request_port, state.response_port)
       RanExpression(Ok(Void), state)
     }
   }
 }
 
-@external(erlang, "socket_connections", "run_command")
-fn run_command(
+@external(erlang, "socket_connections", "supply_command")
+fn supply_command(
   external_command: String,
   args: List(String),
-  request_port: Port,
   response_socket: String,
 ) -> Nil
+
+@external(erlang, "socket_connections", "finish_command")
+fn finish_command(request_port: Port, response_socket: String) -> Nil
 
 pub fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
   case value {

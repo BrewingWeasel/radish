@@ -2,7 +2,7 @@ use rustyline::highlight::MatchingBracketHighlighter;
 use rustyline::validate::MatchingBracketValidator;
 use rustyline::{error::ReadlineError, Editor};
 use rustyline::{Completer, Helper, Highlighter, Hinter, Validator};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::{os::unix::net::UnixDatagram, thread::sleep, time::Duration};
 use uuid::Uuid;
 
@@ -52,35 +52,65 @@ fn main() {
 
 fn run_command(command: String, request_sock: &UnixDatagram, response_sock: &UnixDatagram) {
     request_sock.send(command.as_bytes()).unwrap();
+
     let mut buf = vec![0; 100];
     let size = response_sock.recv(buf.as_mut_slice()).unwrap();
     let response = std::str::from_utf8(&buf[..size]).unwrap();
+
     match response.split_at(1) {
         ("c", command) => {
-            let mut args = Vec::new();
-            loop {
-                let mut details_buf = vec![0; 100];
-                let size = response_sock.recv(&mut details_buf).unwrap();
-                match std::str::from_utf8(&details_buf[..size])
-                    .unwrap()
-                    .split_at(1)
-                {
-                    ("a", arg) => {
-                        args.push(arg.to_owned());
+            let mut cur_command = command.to_owned();
+            let mut commands = Vec::new();
+            'commands: loop {
+                let mut args = Vec::new();
+                loop {
+                    let mut details_buf = vec![0; 100];
+                    let size = response_sock.recv(&mut details_buf).unwrap();
+                    match std::str::from_utf8(&details_buf[..size])
+                        .unwrap()
+                        .split_at(1)
+                    {
+                        ("a", arg) => {
+                            args.push(arg.to_owned());
+                        }
+                        ("e", _) => {
+                            commands.push((cur_command, args));
+                            break 'commands;
+                        }
+                        ("c", new_command) => {
+                            commands.push((cur_command, args));
+                            cur_command = new_command.to_owned();
+                            continue 'commands;
+                        }
+                        _ => panic!("unexpected message!"),
                     }
-                    ("e", _) => break,
-                    _ => todo!(),
                 }
             }
+            let mut children: Vec<Child> = Vec::new();
+            for (i, (command, args)) in commands.iter().enumerate() {
+                let stdin = if let Some(last) = children.pop() {
+                    Stdio::from(last.stdout.unwrap())
+                } else {
+                    Stdio::inherit()
+                };
 
-            let mut child = Command::new(command)
-                .args(args)
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .spawn()
-                .unwrap();
+                let stdout = if i == (commands.len() - 1) {
+                    Stdio::inherit()
+                } else {
+                    Stdio::piped()
+                };
 
-            child.wait().unwrap();
+                children.push(
+                    Command::new(command)
+                        .args(args)
+                        .stdin(stdin)
+                        .stdout(stdout)
+                        .spawn()
+                        .unwrap(),
+                )
+            }
+
+            children.last_mut().unwrap().wait().unwrap();
             request_sock.send("done".as_bytes()).unwrap();
             response_sock.recv(&mut []).unwrap();
         }

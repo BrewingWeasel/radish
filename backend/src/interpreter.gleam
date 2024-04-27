@@ -1,8 +1,8 @@
-import parser
-import gleam/list
-import gleam/result
 import gleam/dict.{type Dict}
+import gleam/list
 import gleam/otp/port.{type Port}
+import gleam/result
+import parser
 
 pub type RuntimeError {
   InvalidSyntax(SyntaxError)
@@ -67,6 +67,25 @@ pub fn map(
       }
     })
   RanExpression(returned: result.map(value, list.reverse), with: state)
+}
+
+pub fn try_each(
+  args: List(a),
+  state: State,
+  func: fn(State, a) -> RanExpression(t),
+) -> RanExpression(Nil) {
+  let v =
+    list.try_fold(args, state, fn(state, v) {
+      let expression = func(state, v)
+      case expression.returned {
+        Ok(_) -> Ok(expression.with)
+        Error(e) -> Error(#(e, expression.with))
+      }
+    })
+  case v {
+    Ok(new_state) -> RanExpression(Ok(Nil), new_state)
+    Error(#(e, new_state)) -> RanExpression(Error(e), new_state)
+  }
 }
 
 pub fn try(

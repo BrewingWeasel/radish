@@ -1,5 +1,5 @@
 -module(socket_connections).
--export([generate_server/0, run_command/4]).
+-export([generate_server/0, finish_command/2, supply_command/3]).
 
 generate_server() -> 
    file:del_dir_r("/tmp/radish"),
@@ -25,12 +25,15 @@ handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell) ->
    gen_udp:send(Socket, {local, ResponsePort}, 0, "r" ++ Response),
    handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell).
 
-run_command(Command, Args, RequestPort, OutSocket) ->
+supply_command(Command, Args, OutSocket) ->
    {ok, Socket} = gen_udp:open(0, [local]), % TODO: store this
    gen_udp:send(Socket, {local, OutSocket}, 0, "c" ++ Command),
 
    SendArg = fun(Arg) -> gen_udp:send(Socket, {local, OutSocket}, 0, "a" ++ Arg) end,
-   lists:foreach(SendArg, Args),
+   lists:foreach(SendArg, Args).
+
+finish_command(RequestPort, OutSocket) ->
+   {ok, Socket} = gen_udp:open(0, [local]), % TODO: store this
 
    gen_udp:send(Socket, {local, OutSocket}, 0, "e"),
    {ok, _} = gen_udp:recv(RequestPort, 0).
