@@ -1,9 +1,7 @@
-import gleam/bit_array
 import gleam/bool
 import gleam/dict
 import gleam/erlang/process
 import gleam/int
-import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/port.{type Port}
@@ -148,87 +146,29 @@ pub fn call_func(
         _ -> RanExpression(Error(interpreter.ExpectedValue), state)
       }
     }
-    _ -> {
+    external_command -> {
       use arg_strings, state <- interpreter.try(get_string_from_args(
         state,
         args,
       ))
-
-      use command, state <- interpreter.try(RanExpression(
-        func
-          |> glexec.find_executable()
-          |> result.replace_error(interpreter.CommandError),
-        state,
-      ))
-
-      // TODO: error handling
-      let assert Ok(glexec.Pids(_pid, ospid)) =
-        glexec.new()
-        |> glexec.with_stdin(glexec.StdinPipe)
-        |> glexec.with_stdout(glexec.StdoutCapture)
-        |> glexec.with_stderr(glexec.StderrCapture)
-        |> glexec.with_monitor(True)
-        |> glexec.with_pty(True)
-        |> glexec.run_async(glexec.Execve([command, ..arg_strings]))
-
-      let stdin = process.start(fn() { pipe_stdin(ospid, state) }, False)
-
-      pipe_stdout(ospid, state, stdin)
+      run_command(
+        external_command,
+        arg_strings,
+        state.request_port,
+        state.response_port,
+      )
       RanExpression(Ok(Void), state)
     }
   }
 }
 
-const timeout = 500_000
-
-fn pipe_stdin(running_command, state: State) {
-  let response = read_stdin(state.request_port)
-  case response {
-    <<_, _, _, _, "end":utf8>> -> {
-      let assert Ok(Nil) = glexec.send_eof(running_command)
-      Nil
-    }
-    <<_, _, _, _, v>> -> {
-      let assert Ok(Nil) =
-        glexec.send(
-          running_command,
-          string.from_utf_codepoints([
-            {
-              let assert Ok(u) = string.utf_codepoint(v)
-              u
-            },
-          ]),
-        )
-      pipe_stdin(running_command, state)
-    }
-    _ -> Nil
-  }
-}
-
-@external(erlang, "socket_connections", "read_stdin")
-fn read_stdin(socket: Port) -> BitArray
-
-fn pipe_stdout(running_command, state: State, stdin_task) {
-  case glexec.obtain(50) {
-    Ok(glexec.ObtainStdout(_, v)) | Ok(glexec.ObtainStderr(_, v)) -> {
-      send_stdout(state.response_port, v)
-      pipe_stdout(running_command, state, stdin_task)
-    }
-    Error(glexec.ObtainTimeout) ->
-      pipe_stdout(running_command, state, stdin_task)
-    Error(_) -> {
-      process.kill(stdin_task)
-      Nil
-    }
-    // Error(glexec.ObtainDownNormal(_, _)) -> {
-  //   Nil
-  // }
-  }
-  // TODO: error handling
-}
-
-@external(erlang, "socket_connections", "send_stdout")
-fn send_stdout(out_socket: String, contents: String) -> Nil
+@external(erlang, "socket_connections", "run_command")
+fn run_command(
+  external_command: String,
+  args: List(String),
+  request_port: Port,
+  response_socket: String,
+) -> Nil
 
 pub fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
   case value {

@@ -6,6 +6,7 @@ use rustyline::{
     error::ReadlineError, Cmd, Editor, EventHandler, KeyCode, KeyEvent, Modifiers, Result,
 };
 use rustyline::{Completer, Helper, Highlighter, Hinter, Validator};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::{io::stdin, os::unix::net::UnixDatagram, thread::sleep, time::Duration};
 use uuid::Uuid;
@@ -40,23 +41,10 @@ fn main() {
         .connect(format!("/tmp/radish/{uuid}_request"))
         .unwrap();
 
-    let stdin_sock = Arc::new(UnixDatagram::unbound().unwrap());
-    stdin_sock
-        .connect(format!("/tmp/radish/{uuid}_stdin"))
-        .unwrap();
-
     loop {
         match rl.readline(">> ") {
             Ok(buffer) => {
-                task::block_on(async {
-                    run_command(
-                        buffer,
-                        &request_sock,
-                        Arc::clone(&stdin_sock),
-                        &response_sock,
-                    )
-                    .await
-                });
+                task::block_on(async { run_command(buffer, &request_sock, &response_sock).await });
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("Closing shell");
@@ -69,43 +57,41 @@ fn main() {
     }
 }
 
-async fn run_command(
-    command: String,
-    request_sock: &UnixDatagram,
-    stdin_sock: Arc<UnixDatagram>,
-    response_sock: &UnixDatagram,
-) {
+async fn run_command(command: String, request_sock: &UnixDatagram, response_sock: &UnixDatagram) {
     request_sock.send(command.as_bytes()).unwrap();
-    let task = task::spawn(async move {
-        let mut buffer = vec![0; 1];
-        let mut v = 0;
-        loop {
-            match async_std::io::stdin().read_exact(&mut buffer).await {
-                Ok(()) => {
-                    stdin_sock.send(&buffer).unwrap();
+    let mut buf = vec![0; 100];
+    let size = response_sock.recv(buf.as_mut_slice()).unwrap();
+    let response = std::str::from_utf8(&buf[..size]).unwrap();
+    match response.split_at(1) {
+        ("c", command) => {
+            let mut args = Vec::new();
+            loop {
+                let mut details_buf = vec![0; 100];
+                response_sock.recv(&mut details_buf).unwrap();
+                match std::str::from_utf8(&details_buf).unwrap().split_at(1) {
+                    ("a", arg) => {
+                        args.push(arg.to_owned());
+                    }
+                    ("e", _) => break,
+                    _ => todo!(),
                 }
-                Err(_) => {
-                    stdin_sock.send("end".as_bytes()).unwrap();
-                    break;
-                }
             }
-            buffer = vec![0; 1];
+            println!("{:?} {:?}", args, command);
+
+            let mut child = Command::new(command)
+                .args(args)
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .spawn()
+                .unwrap();
+
+            child.wait().unwrap();
+            request_sock.send("done".as_bytes()).unwrap();
+            response_sock.recv(&mut []).unwrap();
         }
-    });
-    loop {
-        let mut buf = [0; 128];
-        response_sock.recv(&mut buf).unwrap();
-        let response = std::str::from_utf8(&buf).unwrap();
-        match response.split_at(1) {
-            ("o", stdout) => {
-                print!("{}", stdout);
-            }
-            ("r", return_value) => {
-                println!("returned {}", return_value);
-                task.cancel().await;
-                break;
-            }
-            _ => unreachable!(),
+        ("r", return_value) => {
+            println!("returned {}", return_value);
         }
+        _ => unreachable!(),
     }
 }

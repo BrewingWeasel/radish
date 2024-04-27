@@ -1,5 +1,5 @@
 -module(socket_connections).
--export([generate_server/0, read_stdin/1, send_stdout/2, identity/1]).
+-export([generate_server/0, run_command/4]).
 
 generate_server() -> 
    file:del_dir_r("/tmp/radish"),
@@ -14,9 +14,8 @@ handle_connections(Port) ->
 
 run_shell(Uuid) ->
    {ok, RequestPort} = gen_udp:open(0, [{active, false}, {ifaddr, {local,"/tmp/radish/" ++ Uuid ++ "_request"}}]),
-   {ok, StdinPort} = gen_udp:open(0, [{active, false}, {ifaddr, {local,"/tmp/radish/" ++ Uuid ++ "_stdin"}}]),
    ResponsePort = "/tmp/radish/" ++ Uuid ++ "_response",
-   {ok, Shell} = radish:start_shell(StdinPort, ResponsePort),
+   {ok, Shell} = radish:start_shell(RequestPort, ResponsePort),
    {ok, Socket} = gen_udp:open(0, [local]),
    handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell).
 
@@ -26,18 +25,12 @@ handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell) ->
    gen_udp:send(Socket, {local, ResponsePort}, 0, "r" ++ Response),
    handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell).
 
-read_stdin(RequestPort) ->
-   case gen_udp:recv(RequestPort, 0, 100) of
-      {ok, {_, _, Data}} -> 
-         erlang:term_to_binary(Data);
-      {error, _} -> 
-         timer:sleep(100),
-         read_stdin(RequestPort)
-   end.
-
-send_stdout(ResponseSocket, Contents) ->
+run_command(Command, Args, RequestPort, OutSocket) ->
    {ok, Socket} = gen_udp:open(0, [local]), % TODO: store this
-   gen_udp:send(Socket, {local, ResponseSocket}, 0, "o" ++ Contents).
+   gen_udp:send(Socket, {local, OutSocket}, 0, "c" ++ Command),
 
-identity(X) ->
-    X.
+   SendArg = fun(Arg) -> gen_udp:send(Socket, {local, OutSocket}, 0, "a" ++ Arg) end,
+   lists:foreach(SendArg, Args),
+
+   gen_udp:send(Socket, {local, OutSocket}, 0, "e"),
+   {ok, _} = gen_udp:recv(RequestPort, 0).
