@@ -1,14 +1,9 @@
-use async_std::io::ReadExt;
-use async_std::task;
 use rustyline::highlight::MatchingBracketHighlighter;
 use rustyline::validate::MatchingBracketValidator;
-use rustyline::{
-    error::ReadlineError, Cmd, Editor, EventHandler, KeyCode, KeyEvent, Modifiers, Result,
-};
+use rustyline::{error::ReadlineError, Editor};
 use rustyline::{Completer, Helper, Highlighter, Hinter, Validator};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::{io::stdin, os::unix::net::UnixDatagram, thread::sleep, time::Duration};
+use std::{os::unix::net::UnixDatagram, thread::sleep, time::Duration};
 use uuid::Uuid;
 
 #[derive(Completer, Helper, Highlighter, Hinter, Validator)]
@@ -43,9 +38,7 @@ fn main() {
 
     loop {
         match rl.readline(">> ") {
-            Ok(buffer) => {
-                task::block_on(async { run_command(buffer, &request_sock, &response_sock).await });
-            }
+            Ok(buffer) => run_command(buffer, &request_sock, &response_sock),
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("Closing shell");
                 break;
@@ -57,7 +50,7 @@ fn main() {
     }
 }
 
-async fn run_command(command: String, request_sock: &UnixDatagram, response_sock: &UnixDatagram) {
+fn run_command(command: String, request_sock: &UnixDatagram, response_sock: &UnixDatagram) {
     request_sock.send(command.as_bytes()).unwrap();
     let mut buf = vec![0; 100];
     let size = response_sock.recv(buf.as_mut_slice()).unwrap();
