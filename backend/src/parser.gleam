@@ -1,6 +1,6 @@
-import gleam/string
-import gleam/result
 import gleam/int
+import gleam/result
+import gleam/string
 
 pub type Ast {
   Call(contents: List(Ast), piped: Bool)
@@ -15,6 +15,7 @@ pub type ParseError {
   MissingQuote
   MissingListEnd(String)
   UnexpectedFileEnd
+  ExpectedEOF
 }
 
 pub type Parsing(t) {
@@ -36,6 +37,7 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
       use list <- result.try(parse_list(call, "]"))
       Ok(Parsing(list.remaining, BracketList(list.value)))
     }
+    "" -> Error(ExpectedEOF)
     v -> {
       use atom <- result.try(parse_atom(v))
       Ok(Parsing(
@@ -43,11 +45,11 @@ pub fn parse_expression(input: String) -> Result(Parsing(Ast), ParseError) {
         int.parse(atom.value)
           |> result.map(Number)
           |> result.try_recover(fn(_) {
-            case string.pop_grapheme(atom.value) {
-              Ok(#("$", var_name)) if var_name != "" -> Ok(Variable(var_name))
-              _ -> Error(Nil)
-            }
-          })
+          case string.pop_grapheme(atom.value) {
+            Ok(#("$", var_name)) if var_name != "" -> Ok(Variable(var_name))
+            _ -> Error(Nil)
+          }
+        })
           |> result.unwrap(UnquotedStr(atom.value)),
       ))
     }
@@ -102,11 +104,11 @@ fn do_parse_string(input: List(String)) -> Result(Parsing(String), ParseError) {
       Ok(Parsing(
         next_part.remaining,
         case following {
-            "n" -> "\n"
-            "t" -> "\t"
-            "\\" -> "\\"
-            x -> "\\" <> x
-          }
+          "n" -> "\n"
+          "t" -> "\t"
+          "\\" -> "\\"
+          x -> "\\" <> x
+        }
           <> next_part.value,
       ))
     }

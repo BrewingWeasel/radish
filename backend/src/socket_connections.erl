@@ -14,10 +14,19 @@ handle_connections(Port) ->
 
 run_shell(Uuid) ->
    {ok, RequestPort} = gen_udp:open(0, [{active, false}, {ifaddr, {local,"/tmp/radish/" ++ Uuid ++ "_request"}}]),
+   {ok, Socket} = gen_udp:open(0, [local]),
    ResponsePort = "/tmp/radish/" ++ Uuid ++ "_response",
    {ok, Shell} = radish:start_shell(RequestPort, ResponsePort),
-   {ok, Socket} = gen_udp:open(0, [local]),
-   handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell).
+
+   {ok, {_, _, Data}} = gen_udp:recv(RequestPort, 0),
+   case Data of
+       "i" ->
+         handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell);
+       Fileconts ->
+           Response = radish_shell:run_file(Shell, erlang:iolist_to_binary(Fileconts)),
+           gen_udp:send(Socket, {local, ResponsePort}, 0, "r" ++ Response)
+   end.
+
 
 handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell) ->
    {ok, {_, _, Data}} = gen_udp:recv(RequestPort, 0),
