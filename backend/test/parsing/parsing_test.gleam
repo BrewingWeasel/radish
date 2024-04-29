@@ -1,5 +1,5 @@
-import parser
 import gleeunit/should
+import parser
 
 pub fn parse_expr1_test() {
   "(echo \"hello there!\")"

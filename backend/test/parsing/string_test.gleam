@@ -1,5 +1,5 @@
-import parser
 import gleeunit/should
+import parser
 
 pub fn parse_string_from_expression_test() {
   "\"Labas pasauli!\""

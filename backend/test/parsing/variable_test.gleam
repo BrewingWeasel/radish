@@ -1,5 +1,5 @@
-import parser
 import gleeunit/should
+import parser
 
 pub fn parse_variable_expression_test() {
   "$cat"
