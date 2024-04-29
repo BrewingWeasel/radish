@@ -1,21 +1,17 @@
-import parser
-import interpreter
-import interpreter/expression
 import gleeunit/should
+import interpreter
+import utils.{type Interpreted, interpreter_command}
 
 pub fn single_if_expression_from_string_1_test() {
-  let parsed =
-    "(if (== 2 2) [(echo hi)])"
-    |> parser.parse_expression()
+  interpreter_command("(if (== 2 2) [(echo hi)])", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.Void)
+    |> should.equal(interpreter.Void)
+  })
 }
 
 pub fn ifelse_expression_from_string_1_test() {
-  let parsed =
+  interpreter_command(
     "
 (if-else (== 2 2) [
     (echo hi)
@@ -23,27 +19,27 @@ pub fn ifelse_expression_from_string_1_test() {
 ] [
    (echo bye)
    2
-])"
-    |> parser.parse_expression()
-    |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishInt(1))
+])",
+    fn(parsed: Interpreted) {
+      parsed.returned.returned
+      |> should.be_ok()
+      |> should.equal(interpreter.RadishInt(1))
+    },
+  )
 }
 
 pub fn ifelse_expression_from_string_2_test() {
-  let parsed =
+  interpreter_command(
     "
 (if-else (== 1 2) [
     1
 ] [
    2
-])"
-    |> parser.parse_expression()
-    |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishInt(2))
+])",
+    fn(parsed: Interpreted) {
+      parsed.returned.returned
+      |> should.be_ok()
+      |> should.equal(interpreter.RadishInt(2))
+    },
+  )
 }

@@ -1,125 +1,91 @@
-import parser
-import interpreter
-import interpreter/expression
 import gleeunit/should
+import interpreter
+import utils.{type Interpreted, interpreter_command}
 
-pub fn single_less_than_1_test() {
-  let parsed =
-    "(< 2 3)"
-    |> parser.parse_expression()
+pub fn single_less_than_1_test_() {
+  interpreter_command("(< 2 3)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(True))
+    |> should.equal(interpreter.RadishBool(True))
+  })
 }
 
-pub fn single_less_than_2_test() {
-  let parsed =
-    "(< 4 3)"
-    |> parser.parse_expression()
+pub fn single_less_than_2_test_() {
+  interpreter_command("(< 4 3)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(False))
+    |> should.equal(interpreter.RadishBool(False))
+  })
 }
 
-pub fn single_less_than_3_test() {
-  let parsed =
-    "(< 0 0)"
-    |> parser.parse_expression()
+pub fn single_less_than_3_test_() {
+  interpreter_command("(< 0 0)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(False))
+    |> should.equal(interpreter.RadishBool(False))
+  })
 }
 
-pub fn multiple_less_than_1_test() {
-  let parsed =
-    "(< 0 1 1)"
-    |> parser.parse_expression()
+pub fn multiple_less_than_1_test_() {
+  interpreter_command("(< 0 1 1)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(False))
+    |> should.equal(interpreter.RadishBool(False))
+  })
 }
 
-pub fn multiple_greater_than_1_test() {
-  let parsed =
-    "(> 7 6 3 2 1 0)"
-    |> parser.parse_expression()
+pub fn multiple_greater_than_1_test_() {
+  interpreter_command("(> 7 6 3 2 1 0)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(True))
+    |> should.equal(interpreter.RadishBool(True))
+  })
 }
 
-pub fn multiple_greater_than_2_test() {
-  let parsed =
-    "(> 7 6 3 2 1 (+ 2 5))"
-    |> parser.parse_expression()
+pub fn multiple_greater_than_2_test_() {
+  interpreter_command("(> 7 6 3 2 1 (+ 2 5))", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(False))
+    |> should.equal(interpreter.RadishBool(False))
+  })
 }
 
-pub fn single_equal_to_1_test() {
-  let parsed =
-    "(== 1 1)"
-    |> parser.parse_expression()
+pub fn single_equal_to_1_test_() {
+  interpreter_command("(== 1 1)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(True))
+    |> should.equal(interpreter.RadishBool(True))
+  })
 }
 
-pub fn single_equal_to_2_test() {
-  let parsed =
-    "(== 1 2)"
-    |> parser.parse_expression()
+pub fn single_equal_to_2_test_() {
+  interpreter_command("(== 1 2)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(False))
+    |> should.equal(interpreter.RadishBool(False))
+  })
 }
 
-pub fn multiple_equal_to_1_test() {
-  let parsed =
-    "   (  == 1    1 1 1 1   1)"
-    |> parser.parse_expression()
+pub fn multiple_equal_to_1_test_() {
+  interpreter_command("   (  == 1    1 1 1 1   1)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(True))
+    |> should.equal(interpreter.RadishBool(True))
+  })
 }
 
-pub fn multiple_unequal_to_1_test() {
-  let parsed =
-    "   (  != 1    1 1 1 1   1)"
-    |> parser.parse_expression()
+pub fn multiple_unequal_to_1_test_() {
+  interpreter_command("   (  != 1    1 1 1 1   1)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(False))
+    |> should.equal(interpreter.RadishBool(False))
+  })
 }
 
-pub fn multiple_unequal_to_2_test() {
-  let parsed =
-    "   (  != 2    1 2 1 2   1)"
-    |> parser.parse_expression()
+pub fn multiple_unequal_to_2_test_() {
+  interpreter_command("   (  != 2    1 2 1 2   1)", fn(parsed: Interpreted) {
+    parsed.returned.returned
     |> should.be_ok()
-
-  expression.run_expression(interpreter.new_state(), parsed.value).returned
-  |> should.be_ok()
-  |> should.equal(interpreter.RadishBool(True))
+    |> should.equal(interpreter.RadishBool(True))
+  })
 }

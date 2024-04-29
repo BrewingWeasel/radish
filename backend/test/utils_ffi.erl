@@ -1,0 +1,35 @@
+-module(utils_ffi).
+
+-export([simulate_shell/1, get_command/1, setup/0]).
+
+simulate_shell(Uuid) ->
+   {ok, RequestPort} = gen_udp:open(0, [{active, false}, {ifaddr, {local,<<"/tmp/radish/", Uuid/binary, "_request">>}}]),
+
+   % usually this would be done on the frontend, but we simulate it here
+   ResponsePortName = <<"/tmp/radish/", Uuid/binary, "_response">>,
+   {ok, ResponsePort} = gen_udp:open(0, [{active, false}, {ifaddr, {local,ResponsePortName}}]),
+
+   {RequestPort, ResponsePort, ResponsePortName}.
+
+get_command(ResponsePort) ->
+   
+   case gen_udp:recv(ResponsePort, 0, 50) of
+       {error, timeout} -> response;
+       {ok, {_, _, "c" ++ Command}} ->
+         {command, lists:reverse(handle_command(ResponsePort, [{Command, []}]))}
+   end.
+
+handle_command(ResponsePort, Commands) ->
+   {ok, {_, _, Data}} = gen_udp:recv(ResponsePort, 0),
+   case Data of
+       "e" ++ _End ->
+           Commands;
+       "a" ++ Arg ->
+           [{Cmd, Args}|Rest] = Commands,
+           handle_command(ResponsePort, [{Cmd, [Arg|Args]}|Rest]);
+       "c" ++ Command ->
+           handle_command(ResponsePort, [{Command, []}|Commands])
+   end.
+
+setup() ->
+   file:make_dir("/tmp/radish").
