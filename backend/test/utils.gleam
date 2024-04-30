@@ -1,4 +1,5 @@
 import gleam/erlang/atom
+import gleam/list
 import gleam/otp/port.{type Port}
 import gleam/otp/task
 import gleeunit/should
@@ -35,10 +36,13 @@ pub fn run_command_from_string(input: String) -> Interpreted {
     interpreter.new_state(request_port, response_port_name)
     |> expression.run_expression(parsed.value)
 
-  Interpreted(
-    returned: ran_expression,
-    to_frontend: task.await_forever(to_frontend),
-  )
+  let modified_to_frontend = case task.await_forever(to_frontend) {
+    Command(cmds) ->
+      Command(list.map(cmds, fn(x) { #(x.0, list.reverse(x.1)) }))
+    Response -> Response
+  }
+
+  Interpreted(returned: ran_expression, to_frontend: modified_to_frontend)
 }
 
 pub fn interpreter_command(command: String, handler: fn(Interpreted) -> Nil) {
