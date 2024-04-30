@@ -1,4 +1,5 @@
 import gleam/int
+import gleam/list
 import gleam/result
 import gleam/string
 
@@ -73,51 +74,52 @@ pub fn parse_list(
   input: String,
   ending: String,
 ) -> Result(Parsing(List(Ast)), ParseError) {
-  use parsed_list <- result.try(do_parse_list(input, ending))
-  Ok(Parsing(parsed_list.remaining, parsed_list.value))
+  use parsed_list <- result.try(do_parse_list(input, ending, []))
+  Ok(Parsing(parsed_list.remaining, list.reverse(parsed_list.value)))
 }
 
 fn do_parse_list(
   input: String,
   ending: String,
+  acc: List(Ast),
 ) -> Result(Parsing(List(Ast)), ParseError) {
   case string.pop_grapheme(string.trim_left(input)) {
-    Ok(#(v, rest)) if v == ending -> Ok(Parsing(rest, []))
+    Ok(#(v, rest)) if v == ending -> Ok(Parsing(rest, acc))
     Ok(_) -> {
       use cur_elem <- result.try(parse_expression(input))
-      use next_items <- result.try(do_parse_list(cur_elem.remaining, ending))
-      Ok(Parsing(next_items.remaining, [cur_elem.value, ..next_items.value]))
+      do_parse_list(cur_elem.remaining, ending, [cur_elem.value, ..acc])
     }
     Error(_) -> Error(MissingListEnd(ending))
   }
 }
 
 pub fn parse_string(input: String) -> Result(Parsing(Ast), ParseError) {
-  use next_part <- result.try(do_parse_string(string.to_graphemes(input)))
+  use next_part <- result.try(do_parse_string(string.to_graphemes(input), ""))
   Ok(Parsing(value: StrVal(next_part.value), remaining: next_part.remaining))
 }
 
-fn do_parse_string(input: List(String)) -> Result(Parsing(String), ParseError) {
+fn do_parse_string(
+  input: List(String),
+  acc: String,
+) -> Result(Parsing(String), ParseError) {
   case input {
     ["\\", following, ..rest] -> {
-      use next_part <- result.try(do_parse_string(rest))
-      Ok(Parsing(
-        next_part.remaining,
-        case following {
+      do_parse_string(
+        rest,
+        acc
+          <> case following {
           "n" -> "\n"
           "t" -> "\t"
           "\\" -> "\\"
           x -> "\\" <> x
-        }
-          <> next_part.value,
-      ))
+        },
+      )
     }
     ["\"", ..rest] -> {
-      Ok(Parsing(string.concat(rest), ""))
+      Ok(Parsing(string.concat(rest), acc))
     }
     [v, ..rest] -> {
-      use next_part <- result.try(do_parse_string(rest))
-      Ok(Parsing(remaining: next_part.remaining, value: v <> next_part.value))
+      do_parse_string(rest, acc <> v)
     }
     [] -> Error(MissingQuote)
   }
