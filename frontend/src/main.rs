@@ -47,11 +47,17 @@ fn main() {
     }
 
     let response_sock = UnixDatagram::bind(format!("/tmp/radish/{uuid}_response")).unwrap();
-    sleep(Duration::from_millis(10)); // literally 1 millisecond delay on my computer; sleep a bit longer to be safe
     let request_sock = UnixDatagram::unbound().unwrap();
-    request_sock
-        .connect(format!("/tmp/radish/{uuid}_request"))
-        .unwrap();
+    sleep(Duration::from_millis(1));
+    loop {
+        if request_sock
+            .connect(format!("/tmp/radish/{uuid}_request"))
+            .is_ok()
+        {
+            break;
+        }
+        sleep(Duration::from_millis(5));
+    }
 
     if let Some(file) = args.file {
         request_sock.send(&read(file).unwrap()).unwrap();
