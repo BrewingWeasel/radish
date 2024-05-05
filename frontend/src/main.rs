@@ -83,20 +83,32 @@ async fn main() {
         println!("PID is {:?}", pid);
         let (tx_get_from_pid, rx_get_from_pid) = mpsc::channel(5);
         let (tx_pid_response, mut rx_pid_response) = mpsc::channel(5);
+        let (tx_pid_ready, rx_pid_ready) = mpsc::channel(5);
 
         let shell_processes = Arc::new(Mutex::new(HashMap::new()));
 
         let new_request_sock = Arc::clone(&request_sock);
         let shell_processes_clone = Arc::clone(&shell_processes);
         tokio::spawn(async move {
-            handle_socket_data(shell_processes_clone, new_request_sock, response_sock).await;
+            handle_socket_data(
+                shell_processes_clone,
+                new_request_sock,
+                response_sock,
+                Arc::new(tx_pid_ready),
+            )
+            .await;
         });
 
         tokio::spawn(async move {
-            handle_socket_responses(shell_processes, rx_get_from_pid, tx_pid_response).await;
+            handle_socket_responses(
+                shell_processes,
+                rx_get_from_pid,
+                tx_pid_response,
+                rx_pid_ready,
+            )
+            .await;
         });
 
-        let mut is_first = true;
         loop {
             match rl.readline(">> ") {
                 Ok(buffer) => {
@@ -120,7 +132,6 @@ async fn main() {
                     println!("Event: {:?}", x);
                 }
             }
-            is_first = false;
         }
     }
 }
@@ -151,15 +162,30 @@ async fn handle_socket_responses(
     shell_processes: Arc<Mutex<ShellProcesses>>,
     mut rx_get_from_pid: mpsc::Receiver<Pid>,
     tx_pid_response: mpsc::Sender<Option<ResponseHandled>>,
+    mut rx_pid_ready: mpsc::Receiver<Pid>,
 ) {
+    let mut ready_pids = Vec::new();
     loop {
-        if let Some(pid) = rx_get_from_pid.recv().await {
-            let mut lock = shell_processes.lock().await;
-            let response = match lock.get_mut(&pid) {
-                Some(process) => process.rx_return.recv().await,
-                None => None,
-            };
-            tx_pid_response.send(response).await.unwrap();
+        tokio::select! {
+            Some(new_pid) = rx_pid_ready.recv() => {
+                ready_pids.push(new_pid.clone());
+            }
+            Some(pid) = rx_get_from_pid.recv() => {
+                if !ready_pids.contains(&pid) {
+                    while let Some(other_pid) = rx_pid_ready.recv().await {
+                        ready_pids.push(other_pid.clone());
+                        if other_pid == pid {
+                            break;
+                        }
+                    }
+                }
+                let mut lock = shell_processes.lock().await;
+                let response = match lock.get_mut(&pid) {
+                    Some(process) => process.rx_return.recv().await,
+                    None => dbg!(None),
+                };
+                tx_pid_response.send(response).await.unwrap();
+            }
         }
     }
 }
@@ -168,6 +194,7 @@ async fn handle_socket_data(
     response_handler: Arc<Mutex<ShellProcesses>>,
     request_sock: Arc<UnixDatagram>,
     response_sock: UnixDatagram,
+    tx_pid_ready: Arc<mpsc::Sender<Pid>>,
 ) {
     loop {
         let mut buf = vec![0; 1000];
@@ -182,12 +209,14 @@ async fn handle_socket_data(
         let new_request_sender = Arc::clone(&request_sock);
 
         let mut lock = response_handler.lock().await;
+        let new_tx_pid_ready = Arc::clone(&tx_pid_ready);
         lock.entry(destined_pid.to_vec())
             .or_insert_with(|| {
                 let (tx_request, rx_request) = mpsc::channel(5);
                 let (tx_return, rx_return) = mpsc::channel(5);
                 let pid = destined_pid.to_vec();
                 tokio::spawn(async move {
+                    new_tx_pid_ready.send(pid.clone()).await.unwrap();
                     run_process(rx_request, tx_return, new_request_sender, pid).await;
                 });
                 ShellProcessDetails {
