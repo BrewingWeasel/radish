@@ -34,11 +34,9 @@ run_shell(Uuid) ->
 handle_port_for_shell(ProcessHandler, ResponsePort, Socket, Shell) ->
    Data = process_handler:recv(ProcessHandler, erlang:self()),
    Response = radish_shell:run_command(Shell, Data),
-   io:format("ran!!! ~s", [Response]),
 
    Pid = erlang:pid_to_list(erlang:self()),
    gen_udp:send(Socket, {local, ResponsePort}, 0, [Pid, "r", Response]),
-   io:format("sent!!! ~s", [Data]),
    handle_port_for_shell(ProcessHandler, ResponsePort, Socket, Shell).
 
 supply_command(Command, Args, OutSocket) ->
@@ -53,7 +51,6 @@ supply_command(Command, Args, OutSocket) ->
 finish_command(ProcessHandler, OutSocket) ->
    {ok, Socket} = gen_udp:open(0, [local]), % TODO: store this
    Pid = erlang:pid_to_list(erlang:self()),
-   io:format("akdsfjlkasasdfjl"),
 
    gen_udp:send(Socket, {local, OutSocket}, 0, [Pid, "e"]),
    process_handler:recv(ProcessHandler, erlang:self()).
