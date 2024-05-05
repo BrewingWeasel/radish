@@ -104,10 +104,8 @@ async fn main() {
                     request.extend_from_slice(buffer.as_bytes());
                     request_sock.send(&request).await.unwrap();
 
-                    // Wait for process handler to create a function for the specific pid
-                    if is_first {
-                        sleep(Duration::from_millis(100)).await;
-                    }
+                    // Wait for process handler to lock of mutex
+                    sleep(Duration::from_millis(1)).await;
 
                     tx_get_from_pid.send(pid.clone()).await.unwrap();
                     if rx_pid_response.recv().await.unwrap().unwrap() == ResponseHandled::Command {
@@ -154,13 +152,15 @@ async fn handle_socket_responses(
     mut rx_get_from_pid: mpsc::Receiver<Pid>,
     tx_pid_response: mpsc::Sender<Option<ResponseHandled>>,
 ) {
-    if let Some(pid) = rx_get_from_pid.recv().await {
-        let mut lock = shell_processes.lock().await;
-        let response = match lock.get_mut(&pid) {
-            Some(process) => process.rx_return.recv().await,
-            None => None,
-        };
-        tx_pid_response.send(response).await.unwrap();
+    loop {
+        if let Some(pid) = rx_get_from_pid.recv().await {
+            let mut lock = shell_processes.lock().await;
+            let response = match lock.get_mut(&pid) {
+                Some(process) => process.rx_return.recv().await,
+                None => None,
+            };
+            tx_pid_response.send(response).await.unwrap();
+        }
     }
 }
 
@@ -209,7 +209,6 @@ async fn run_process(
     pid: Pid,
 ) {
     loop {
-        println!("{:?}, waiting......", pid);
         let sent = socket_input.recv().await.unwrap();
         let response = std::str::from_utf8(&sent.bytes[..sent.size]).unwrap();
 
