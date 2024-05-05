@@ -16,33 +16,44 @@ run_shell(Uuid) ->
    {ok, RequestPort} = gen_udp:open(0, [{active, false}, {ifaddr, {local,"/tmp/radish/" ++ Uuid ++ "_request"}}]),
    {ok, Socket} = gen_udp:open(0, [local]),
    ResponsePort = "/tmp/radish/" ++ Uuid ++ "_response",
-   {ok, Shell} = radish:start_shell(RequestPort, ResponsePort),
+   {{ok, Shell}, ProcessHandler} = radish:start_shell(RequestPort, ResponsePort),
 
    {ok, {_, _, Data}} = gen_udp:recv(RequestPort, 0),
    case Data of
        "i" ->
-         handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell);
+         Pid = erlang:pid_to_list(erlang:self()),
+         gen_udp:send(Socket, {local, ResponsePort}, 0, Pid),
+         handle_port_for_shell(ProcessHandler, ResponsePort, Socket, Shell);
        Fileconts ->
            Response = radish_shell:run_file(Shell, erlang:iolist_to_binary(Fileconts)),
-           gen_udp:send(Socket, {local, ResponsePort}, 0, "r" ++ Response)
+           Pid = erlang:pid_to_list(erlang:self()),
+           gen_udp:send(Socket, {local, ResponsePort}, 0, [Pid, "r", Response])
    end.
 
 
-handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell) ->
-   {ok, {_, _, Data}} = gen_udp:recv(RequestPort, 0),
-   Response = radish_shell:run_command(Shell, erlang:iolist_to_binary(Data)),
-   gen_udp:send(Socket, {local, ResponsePort}, 0, "r" ++ Response),
-   handle_port_for_shell(RequestPort, ResponsePort, Socket, Shell).
+handle_port_for_shell(ProcessHandler, ResponsePort, Socket, Shell) ->
+   Data = process_handler:recv(ProcessHandler, erlang:self()),
+   Response = radish_shell:run_command(Shell, Data),
+   io:format("ran!!! ~s", [Response]),
+
+   Pid = erlang:pid_to_list(erlang:self()),
+   gen_udp:send(Socket, {local, ResponsePort}, 0, [Pid, "r", Response]),
+   io:format("sent!!! ~s", [Data]),
+   handle_port_for_shell(ProcessHandler, ResponsePort, Socket, Shell).
 
 supply_command(Command, Args, OutSocket) ->
    {ok, Socket} = gen_udp:open(0, [local]), % TODO: store this
-   gen_udp:send(Socket, {local, OutSocket}, 0, "c" ++ Command),
+   Pid = erlang:pid_to_list(erlang:self()),
+   Data = [Pid, "c", Command],
+   gen_udp:send(Socket, {local, OutSocket}, 0, Data),
 
-   SendArg = fun(Arg) -> gen_udp:send(Socket, {local, OutSocket}, 0, "a" ++ Arg) end,
+   SendArg = fun(Arg) -> gen_udp:send(Socket, {local, OutSocket}, 0, [Pid, "a", Arg]) end,
    lists:foreach(SendArg, Args).
 
-finish_command(RequestPort, OutSocket) ->
+finish_command(ProcessHandler, OutSocket) ->
    {ok, Socket} = gen_udp:open(0, [local]), % TODO: store this
+   Pid = erlang:pid_to_list(erlang:self()),
+   io:format("akdsfjlkasasdfjl"),
 
-   gen_udp:send(Socket, {local, OutSocket}, 0, "e"),
-   {ok, _} = gen_udp:recv(RequestPort, 0).
+   gen_udp:send(Socket, {local, OutSocket}, 0, [Pid, "e"]),
+   process_handler:recv(ProcessHandler, erlang:self()).

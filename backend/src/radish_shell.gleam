@@ -13,8 +13,12 @@ const timeout: Int = 5_000_000
 pub fn new(
   port: Port,
   response_port: String,
+  shell_process_handler,
 ) -> Result(Subject(Message), actor.StartError) {
-  actor.start(interpreter.new_state(port, response_port), handle_message)
+  actor.start(
+    interpreter.new_state(port, response_port, shell_process_handler),
+    handle_message,
+  )
 }
 
 pub fn run_command(state: Subject(Message), contents: String) -> String {

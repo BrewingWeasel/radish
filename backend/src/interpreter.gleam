@@ -1,8 +1,10 @@
 import gleam/dict.{type Dict}
+import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/otp/port.{type Port}
 import gleam/result
 import parser
+import process_handler
 
 pub type RuntimeError {
   InvalidSyntax(SyntaxError)
@@ -32,11 +34,16 @@ pub type State {
     variables: Dict(String, Value),
     request_port: Port,
     response_port: String,
+    shell_process_handler: Subject(process_handler.Message),
   )
 }
 
-pub fn new_state(request_port: Port, response_port: String) -> State {
-  State(dict.new(), request_port, response_port)
+pub fn new_state(
+  request_port: Port,
+  response_port: String,
+  shell_process_handler: Subject(process_handler.Message),
+) -> State {
+  State(dict.new(), request_port, response_port, shell_process_handler)
 }
 
 pub type RanExpression(t) {

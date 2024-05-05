@@ -7,6 +7,7 @@ import ids/uuid
 import interpreter.{type RanExpression}
 import interpreter/expression
 import parser
+import process_handler
 
 pub type Interpreted {
   Interpreted(
@@ -32,8 +33,15 @@ pub fn run_command_from_string(input: String) -> Interpreted {
 
   let to_frontend =
     task.async(fn() { get_command(request_port_name, response_port) })
+
+  let assert Ok(shell_process_handler) = process_handler.new(request_port)
+
   let ran_expression =
-    interpreter.new_state(request_port, response_port_name)
+    interpreter.new_state(
+      request_port,
+      response_port_name,
+      shell_process_handler,
+    )
     |> expression.run_expression(parsed.value)
 
   let modified_to_frontend = case task.await_forever(to_frontend) {

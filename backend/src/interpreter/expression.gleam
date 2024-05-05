@@ -1,15 +1,16 @@
 import gleam/bool
 import gleam/dict
+import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/otp/port.{type Port}
 import gleam/result
 import interpreter.{
   type RanExpression, type RuntimeError, type State, type Value, RadishBool,
   RadishInt, RadishList, RadishStr, RanExpression, Void,
 }
 import parser.{BracketList, Call, Number, StrVal, UnquotedStr, Variable}
+import process_handler
 
 pub fn run_expression(
   state: State,
@@ -143,6 +144,18 @@ pub fn call_func(
         _ -> RanExpression(Error(interpreter.ExpectedValue), state)
       }
     }
+    "&" -> {
+      case args {
+        Parsed([parser.Call([parser.UnquotedStr(command), ..args], piped)]) -> {
+          process.start(
+            fn() { call_func(state, command, Parsed(args), piped) },
+            True,
+          )
+          RanExpression(Ok(Void), state)
+        }
+        _ -> RanExpression(Error(interpreter.ExpectedValue), state)
+      }
+    }
     "|" -> {
       let assert Parsed(parsed_args) = args
       let commands =
@@ -165,7 +178,7 @@ pub fn call_func(
               supply_command(x.0, arg_strings, state.response_port)
               RanExpression(Ok(Nil), state)
             })
-          finish_command(state.request_port, state.response_port)
+          finish_command(state.shell_process_handler, state.response_port)
           case running_commands.returned {
             Ok(Nil) -> RanExpression(Ok(Void), running_commands.with)
             Error(e) -> RanExpression(Error(e), running_commands.with)
@@ -180,7 +193,7 @@ pub fn call_func(
         args,
       ))
       supply_command(external_command, arg_strings, state.response_port)
-      finish_command(state.request_port, state.response_port)
+      finish_command(state.shell_process_handler, state.response_port)
       RanExpression(Ok(Void), state)
     }
   }
@@ -194,7 +207,10 @@ fn supply_command(
 ) -> Nil
 
 @external(erlang, "socket_connections", "finish_command")
-fn finish_command(request_port: Port, response_socket: String) -> Nil
+fn finish_command(
+  shell_process_handler: process.Subject(process_handler.Message),
+  response_socket: String,
+) -> Nil
 
 pub fn get_string_from_value(value: Value) -> Result(List(String), RuntimeError) {
   case value {
