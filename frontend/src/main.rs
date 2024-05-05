@@ -116,13 +116,8 @@ async fn main() {
                     request.extend_from_slice(buffer.as_bytes());
                     request_sock.send(&request).await.unwrap();
 
-                    // Wait for process handler to lock of mutex
-                    sleep(Duration::from_millis(1)).await;
-
                     tx_get_from_pid.send(pid.clone()).await.unwrap();
-                    if rx_pid_response.recv().await.unwrap().unwrap() == ResponseHandled::Command {
-                        // response_sock.recv(&mut []).unwrap();
-                    }
+                    rx_pid_response.recv().await.unwrap().unwrap();
                 }
                 Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                     println!("Closing shell");
@@ -171,10 +166,11 @@ async fn handle_socket_responses(
                 ready_pids.push(new_pid.clone());
             }
             Some(pid) = rx_get_from_pid.recv() => {
-                if !ready_pids.contains(&pid) {
-                    while let Some(other_pid) = rx_pid_ready.recv().await {
-                        ready_pids.push(other_pid.clone());
-                        if other_pid == pid {
+                if let Some(index) = ready_pids.iter().position(|x| *x == pid) {
+                    ready_pids.remove(index);
+                } else {
+                    loop {
+                        if rx_pid_ready.recv().await.as_ref() == Some(&pid) {
                             break;
                         }
                     }
@@ -216,8 +212,14 @@ async fn handle_socket_data(
                 let (tx_return, rx_return) = mpsc::channel(5);
                 let pid = destined_pid.to_vec();
                 tokio::spawn(async move {
-                    new_tx_pid_ready.send(pid.clone()).await.unwrap();
-                    run_process(rx_request, tx_return, new_request_sender, pid).await;
+                    run_process(
+                        rx_request,
+                        tx_return,
+                        new_request_sender,
+                        pid,
+                        new_tx_pid_ready,
+                    )
+                    .await;
                 });
                 ShellProcessDetails {
                     tx_request,
@@ -236,6 +238,7 @@ async fn run_process(
     return_message: mpsc::Sender<ResponseHandled>,
     request_sock: Arc<UnixDatagram>,
     pid: Pid,
+    tx_pid_ready: Arc<mpsc::Sender<Pid>>,
 ) {
     loop {
         let sent = socket_input.recv().await.unwrap();
@@ -299,10 +302,12 @@ async fn run_process(
                     request.extend_from_slice("done".as_bytes());
                     request_sock.send(&request).await.unwrap();
                 }
+                tx_pid_ready.send(pid.clone()).await.unwrap();
                 return_message.send(ResponseHandled::Command).await.unwrap();
             }
             ("r", return_value) => {
                 println!("returned {}", return_value);
+                tx_pid_ready.send(pid.clone()).await.unwrap();
                 return_message
                     .send(ResponseHandled::ReturnValue)
                     .await
