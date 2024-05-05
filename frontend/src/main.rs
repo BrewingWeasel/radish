@@ -10,7 +10,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UnixDatagram;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::sleep;
 
 use uuid::Uuid;
@@ -83,16 +83,17 @@ async fn main() {
         println!("PID is {:?}", pid);
         let (tx_get_from_pid, rx_get_from_pid) = mpsc::channel(5);
         let (tx_pid_response, mut rx_pid_response) = mpsc::channel(5);
-        let response_handler = ResponseHandler {
-            rx_get_from_pid,
-            tx_pid_response,
-            response_sock,
-            request_sock: Arc::clone(&request_sock),
-            shell_processes: HashMap::new(),
-        };
+
+        let shell_processes = Arc::new(Mutex::new(HashMap::new()));
+
+        let new_request_sock = Arc::clone(&request_sock);
+        let shell_processes_clone = Arc::clone(&shell_processes);
+        tokio::spawn(async move {
+            handle_socket_data(shell_processes_clone, new_request_sock, response_sock).await;
+        });
 
         tokio::spawn(async move {
-            handle_socket_data(response_handler).await;
+            handle_socket_responses(shell_processes, rx_get_from_pid, tx_pid_response).await;
         });
 
         let mut is_first = true;
@@ -146,58 +147,58 @@ struct Response {
     size: usize,
 }
 
-#[derive(Debug)]
-struct ResponseHandler {
-    rx_get_from_pid: mpsc::Receiver<Pid>,
+type ShellProcesses = HashMap<Pid, ShellProcessDetails>;
+
+async fn handle_socket_responses(
+    shell_processes: Arc<Mutex<ShellProcesses>>,
+    mut rx_get_from_pid: mpsc::Receiver<Pid>,
     tx_pid_response: mpsc::Sender<Option<ResponseHandled>>,
-    response_sock: UnixDatagram,
-    request_sock: Arc<UnixDatagram>,
-    shell_processes: HashMap<Pid, ShellProcessDetails>,
+) {
+    if let Some(pid) = rx_get_from_pid.recv().await {
+        let mut lock = shell_processes.lock().await;
+        let response = match lock.get_mut(&pid) {
+            Some(process) => process.rx_return.recv().await,
+            None => None,
+        };
+        tx_pid_response.send(response).await.unwrap();
+    }
 }
 
-async fn handle_socket_data(mut response_handler: ResponseHandler) -> Response {
+async fn handle_socket_data(
+    response_handler: Arc<Mutex<ShellProcesses>>,
+    request_sock: Arc<UnixDatagram>,
+    response_sock: UnixDatagram,
+) {
     loop {
         let mut buf = vec![0; 1000];
 
-        tokio::select! {
-            Some(pid) = response_handler.rx_get_from_pid.recv() => {
-                let response = match response_handler.shell_processes.get_mut(&pid) {
-                    Some(process) => process.rx_return.recv().await,
-                    None => None
-                };
-                response_handler.tx_pid_response.send(response).await.unwrap();
-            }
-            Ok(size) = response_handler.response_sock.recv(buf.as_mut_slice()) => {
-                let (destined_pid, message) = buf.split_at(8);
-                let response = Response {
-                    size: size - 8,
-                    bytes: message.to_vec(),
-                };
-                let new_request_sender = Arc::clone(&response_handler.request_sock);
-                let sender = &response_handler
-                    .shell_processes
-                    .entry(destined_pid.to_vec())
-                    .or_insert_with(|| {
-                        let (tx_request, rx_request) = mpsc::channel(5);
-                        let (tx_return, rx_return) = mpsc::channel(5);
-                        let pid = destined_pid.to_vec();
-                        tokio::spawn(async move {
-                            run_process(rx_request, tx_return, new_request_sender, pid).await;
-                        });
-                        ShellProcessDetails {
-                            tx_request,
-                            rx_return,
-                        }
-                    })
-                    .tx_request;
-                sender.send(response).await.unwrap();
-            }
-        }
-        // let size = response_handler
-        //     .response_sock
-        //     .recv(buf.as_mut_slice())
-        //     .await
-        //     .unwrap();
+        let size = response_sock.recv(buf.as_mut_slice()).await.unwrap();
+
+        let (destined_pid, message) = buf.split_at(8);
+        let response = Response {
+            size: size - 8,
+            bytes: message.to_vec(),
+        };
+        let new_request_sender = Arc::clone(&request_sock);
+
+        let mut lock = response_handler.lock().await;
+        lock.entry(destined_pid.to_vec())
+            .or_insert_with(|| {
+                let (tx_request, rx_request) = mpsc::channel(5);
+                let (tx_return, rx_return) = mpsc::channel(5);
+                let pid = destined_pid.to_vec();
+                tokio::spawn(async move {
+                    run_process(rx_request, tx_return, new_request_sender, pid).await;
+                });
+                ShellProcessDetails {
+                    tx_request,
+                    rx_return,
+                }
+            })
+            .tx_request
+            .send(response)
+            .await
+            .unwrap();
     }
 }
 
@@ -208,6 +209,7 @@ async fn run_process(
     pid: Pid,
 ) {
     loop {
+        println!("{:?}, waiting......", pid);
         let sent = socket_input.recv().await.unwrap();
         let response = std::str::from_utf8(&sent.bytes[..sent.size]).unwrap();
 
